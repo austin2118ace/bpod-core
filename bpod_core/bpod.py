@@ -208,6 +208,8 @@ class Bpod(SerialSingleton):
         if self._initialized:
             return
 
+        self.port1 = None
+        self.port2 = None
         self.info: Bpod._Info | None = None
         self.inputs = None
         self.outputs = None
@@ -255,47 +257,13 @@ class Bpod(SerialSingleton):
                 f'firmware v{min_version[0]}.{min_version[1]} or later.'
             )
 
-        # detect additional USB-serial ports
-        candidate_ports = [
-            p.device
-            for p in list_ports.comports()
-            if p.vid == VID_TEENSY and p.device != self.port
-        ]
-        for port in candidate_ports:
-            try:
-                with serial.Serial(port, timeout=0.2) as ser:
-                    if ser.read(1) == bytes([222]):
-                        candidate_ports.remove(port)
-            except serial.SerialException:
-                pass
-        for port in candidate_ports:
-            try:
-                with serial.Serial(port, timeout=0.2) as ser:
-                    self.write(b'{')
-                    if ser.read(1) == bytes([222]):
-                        print(port)
-                        candidate_ports.remove(port)
-                        continue
-            except serial.SerialException:
-                pass
-        if machine_type == 4:
-            for port in candidate_ports:
-                try:
-                    with serial.Serial(port, timeout=0.2) as ser:
-                        self.write(b'}')
-                        if ser.read(1) == bytes([223]):
-                            print(port)
-                            continue
-                except serial.SerialException:
-                    pass
-
         # get some more hardware information
         machine_str = {3: 'r2.0-2.5', 4: '2+ r1.0'}.get(machine_type, 'unknown')
         serial_number = get_serial_number_from_port(self.port)
         pcb_rev = self.query(b'v', '<B')[0] if v_major > 22 else None
 
         # log hardware information
-        logger.info(f'Bpod Finite State Machine {machine_str}')
+        logger.info(f'Bpod Finite State Machine {machine_str} on {self.port}')
         logger.info(f'Serial number {serial_number}') if serial_number else None
         logger.info(f'PCB revision {pcb_rev}') if pcb_rev else None
         logger.info('Firmware version {}.{}'.format(*version))
@@ -312,6 +280,9 @@ class Bpod(SerialSingleton):
         info.extend(self.read(f'<{info[-1]}s1B'))
         info.extend(self.read(f'<{info[-1]}s'))
         self.info = Bpod._Info(*info)
+
+        # detect additional ports
+        self._detect_additional_serial_ports()
 
         def collect_channels(description: bytes, dictionary: dict, channel_cls: type):
             """
@@ -343,6 +314,52 @@ class Bpod(SerialSingleton):
 
         # logger.debug("Configuring modules")
         # self.modules = Modules(self)
+
+    def _detect_additional_serial_ports(self) -> None:
+        """Detect additional USB-serial ports."""
+        # First, assemble a list of candidate ports
+        candidate_ports = [
+            p.device
+            for p in list_ports.comports()
+            if p.vid == VID_TEENSY and p.device != self.port
+        ]
+
+        # Exclude all uninitialized Bpods from the list
+        for port in candidate_ports:
+            try:
+                with serial.Serial(port, timeout=0.15) as ser:
+                    if ser.read(1) == bytes([222]):
+                        candidate_ports.remove(port)
+            except serial.SerialException:
+                pass
+
+        # Find second USB-serial port
+        for port in candidate_ports:
+            try:
+                with serial.Serial(port, timeout=0.05) as ser:
+                    self.write(b'{')
+                    if ser.read(1) == bytes([222]):
+                        ser.reset_input_buffer()
+                        ser.timeout = None
+                        self.port1 = ser
+                        candidate_ports.remove(port)
+                        break
+            except serial.SerialException:
+                pass
+
+        # State Machine 2+ uses a third USB-serial port
+        if self.info.machine_type == 4:
+            for port in candidate_ports:
+                try:
+                    with serial.Serial(port, timeout=0.05) as ser:
+                        self.write(b'}')
+                        if ser.read(1) == bytes([223]):
+                            ser.reset_input_buffer()
+                            ser.timeout = None
+                            self.port2 = ser
+                            break
+                except serial.SerialException:
+                    pass
 
     def close(self):
         """Disconnect the state machine and close the serial connection."""
