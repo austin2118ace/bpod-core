@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 PROJECT_NAME = 'bpod-core'
 VID_TEENSY = 0x16C0
+
 logger = logging.getLogger(__name__)
 
 

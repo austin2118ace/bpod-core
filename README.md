@@ -18,3 +18,4 @@ Links
 [![Coverage Status](https://coveralls.io/repos/github/int-brain-lab/bpod-core/badge.svg?branch=main)](https://coveralls.io/github/int-brain-lab/bpod-core?branch=main)
 [![License](https://img.shields.io/github/license/int-brain-lab/bpod-core)](https://github.com/int-brain-lab/bpod-core/blob/main/LICENSE)
 [![GitHub tag](https://img.shields.io/github/v/tag/int-brain-lab/bpod-core)](https://github.com/int-brain-lab/bpod-core/tags)
+[![PyPI](https://img.shields.io/pypi/v/bpod-core)](https://pypi.org/project/bpod-core/)
