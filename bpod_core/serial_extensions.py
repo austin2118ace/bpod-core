@@ -8,6 +8,7 @@ from typing import Any, overload
 import numpy as np
 import serial
 from serial.serialutil import to_bytes as serial_to_bytes  # type: ignore[attr-defined]
+from serial.threaded import Protocol
 from serial.tools import list_ports
 
 logger = logging.getLogger(__name__)
@@ -283,6 +284,34 @@ class SerialSingleton(ExtendedSerial):
             )
         if port is not None:
             serial.Serial.port.fset(self, port)  # type: ignore[attr-defined]
+
+
+class SerialReaderProtocolRaw(Protocol):
+    def __init__(self):
+        self._buf = bytearray()
+
+    def put(self, data):
+        self._buf.extend(data)
+
+    def get(self, size) -> bytearray:
+        data: bytearray = self._buf[:size]
+        self._buf[:size] = b''
+        return data
+
+    def __len__(self) -> int:
+        return len(self._buf)
+
+    def data_received(self, data):
+        """
+        Called with snippets received from the serial port.
+
+        Parameters
+        ----------
+        - data: The binary data received from the serial port.
+        """
+        self.put(data)
+        while len(self) >= 4:
+            print(struct.unpack('<I', self.get(4)))
 
 
 def to_bytes(data: Any) -> bytes:

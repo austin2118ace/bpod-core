@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import serial
 from serial import SerialException
-from serial.threaded import Protocol, ReaderThread
 from serial.tools import list_ports
 
 from bpod_core import __version__ as VERSION  # noqa: N812
@@ -24,38 +23,6 @@ PROJECT_NAME = 'bpod-core'
 VID_TEENSY = 0x16C0
 
 logger = logging.getLogger(__name__)
-
-
-class SerialReaderProtocolRaw(Protocol):
-    def connection_made(self, transport):
-        """
-        Called when the reader thread is started.
-
-        Parameters
-        ----------
-        - transport: The transport object associated with the connection.
-        """
-        logger.info('Threaded serial reader started - ready to receive data ...')
-
-    def data_received(self, data):
-        """
-        Called with snippets received from the serial port.
-
-        Parameters
-        ----------
-        - data: The binary data received from the serial port.
-        """
-        print(data.decode())
-
-    def connection_lost(self, exc):
-        """
-        Called when the connection is lost or encounters an exception.
-
-        Parameters
-        ----------
-        - exc: The exception that caused the connection loss, if any.
-        """
-        logger.info(exc)
 
 
 class BpodException(SerialSingletonException):
@@ -213,7 +180,6 @@ class Bpod(SerialSingleton):
         self.info: Bpod._Info | None = None
         self.inputs = None
         self.outputs = None
-        self._reader: ReaderThread = ReaderThread(self, SerialReaderProtocolRaw)
 
         # automatic port discovery (also see __new__)
         if port is None and connect is True:
