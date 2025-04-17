@@ -10,7 +10,7 @@ from serial import SerialException
 from serial.tools import list_ports
 
 from bpod_core import __version__ as VERSION  # noqa: N812
-from bpod_core.serial import (
+from bpod_core.serial_extensions import (
     SerialSingleton,
     SerialSingletonException,
     get_serial_number_from_port,

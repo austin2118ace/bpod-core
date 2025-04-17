@@ -1,7 +1,7 @@
 import pytest
 
 from bpod_core.bpod import Bpod, find_bpod_ports
-from bpod_core.serial import SerialSingletonException
+from bpod_core.serial_extensions import SerialSingletonException
 
 bpod_port = next(find_bpod_ports(), None)
 

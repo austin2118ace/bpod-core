@@ -3,7 +3,7 @@ import logging
 import pytest
 
 from bpod_core.bpod import Bpod
-from bpod_core.serial import SerialSingleton, SerialSingletonException
+from bpod_core.serial_extensions import SerialSingleton, SerialSingletonException
 
 logging.basicConfig(level=logging.DEBUG)
 
