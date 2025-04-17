@@ -4,10 +4,18 @@ on: [push, workflow_dispatch]
 
 jobs:
   ruff:
+    name: Ruff
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: chartboost/ruff-action@v1
+        name: ruff check
+        with:
+          args: 'check --output-format=github'
+      - uses: chartboost/ruff-action@v1
+        name: ruff format
+        with:
+          args: 'format --check'
 
   tests:
     name: python ${{ matrix.python-version }} on ${{ matrix.os }}
@@ -20,25 +28,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v4
+      - uses: pdm-project/setup-pdm@v4
         with:
           python-version: ${{ matrix.python-version }}
-          cache: "pip"
-          cache-dependency-path: "pyproject.toml"
-
-      - name: "Update pip"
-        run: pip install --upgrade pip
-
-      - name: Install requirements
-        run: pip install -e .[DEV]
-
-      - name: "Static type checking: mypy"
-        run: mypy
-
-      - name: iblrig unit tests
-        run: pytest
-
+          cache: true
+      - name: install dependencies
+        run: pdm install -dG test -dG typing
+      - name: mypy
+        run: pdm run mypy
+      - name: pytest
+        run: pdm run pytest
       - name: coveralls.io
         uses: coverallsapp/github-action@v2
         with:

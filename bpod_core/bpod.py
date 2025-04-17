@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import logging
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from collections.abc import Iterator
-from importlib import metadata
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import serial
 from serial import SerialException
 from serial.threaded import Protocol, ReaderThread
 from serial.tools import list_ports
-from serial_singleton import (
+
+from bpod_core import __version__ as VERSION  # noqa: N812
+from bpod_core.serial_extensions import (
     SerialSingleton,
     SerialSingletonException,
     get_serial_number_from_port,
@@ -19,10 +20,9 @@ from serial_singleton import (
 if TYPE_CHECKING:
     from _typeshed import ReadableBuffer  # noqa: F401
 
-logging.getLogger(__name__).addHandler(logging.NullHandler())
-
-PROJECT_NAME = 'iblbpod'
-VERSION = metadata.version(PROJECT_NAME)
+PROJECT_NAME = 'bpod-core'
+VID_TEENSY = 0x16C0
+logger = logging.getLogger(__name__)
 
 
 class SerialReaderProtocolRaw(Protocol):
@@ -34,7 +34,7 @@ class SerialReaderProtocolRaw(Protocol):
         ----------
         - transport: The transport object associated with the connection.
         """
-        print('Threaded serial reader started - ready to receive data...')
+        logger.info('Threaded serial reader started - ready to receive data ...')
 
     def data_received(self, data):
         """
@@ -54,7 +54,7 @@ class SerialReaderProtocolRaw(Protocol):
         ----------
         - exc: The exception that caused the connection loss, if any.
         """
-        logging.info(exc)  # Make sure to import 'log' and initialize it in your code
+        logger.info(exc)
 
 
 class BpodException(SerialSingletonException):
@@ -169,7 +169,7 @@ class Bpod(SerialSingleton):
             bpod_instance = Bpod()
         """
         # log version
-        logging.debug(f'{PROJECT_NAME} {VERSION}')
+        logger.debug(f'{PROJECT_NAME} {VERSION}')
 
         # try to automagically find a Bpod device
         if port is None and connect is True:
@@ -238,30 +238,79 @@ class Bpod(SerialSingleton):
 
         # try to perform handshake
         if self.handshake():
-            logging.debug('Handshake successful')
+            logger.debug('Handshake successful')
 
-        # get firmware version, machine type & PCB revision
-        serial_number = get_serial_number_from_port(self.port)
+        # get firmware version and machine type; assert version requirements
         v_major, machine_type = self.query(b'F', '<2H')
         version = (v_major, self.query(b'f', '<H')[0] if v_major > 22 else 0)
-        machine_str = {1: 'v0.5', 2: 'r07+', 3: 'r2.0-2.5', 4: '2+ r1.0'}[machine_type]
+        if not (2 < machine_type < 5):
+            raise BpodException(
+                f'The hardware version of the Bpod on {self.port} is not supported.'
+            )
+        if version < (min_version := (23, 0)):
+            raise BpodException(
+                f'The Bpod on {self.port} uses firmware v{version[0]}.{version[1]} '
+                f'which is not supported. Please update the device to '
+                f'firmware v{min_version[0]}.{min_version[1]} or later.'
+            )
+
+        # detect additional USB-serial ports
+        candidate_ports = [
+            p.device
+            for p in list_ports.comports()
+            if p.vid == VID_TEENSY and p.device != self.port
+        ]
+        for port in candidate_ports:
+            try:
+                with serial.Serial(port, timeout=0.2) as ser:
+                    if ser.read(1) == bytes([222]):
+                        candidate_ports.remove(port)
+            except serial.SerialException:
+                pass
+        for port in candidate_ports:
+            try:
+                with serial.Serial(port, timeout=0.2) as ser:
+                    self.write(b'{')
+                    if ser.read(1) == bytes([222]):
+                        print(port)
+                        candidate_ports.remove(port)
+                        continue
+            except serial.SerialException:
+                pass
+        if machine_type == 4:
+            for port in candidate_ports:
+                try:
+                    with serial.Serial(port, timeout=0.2) as ser:
+                        self.write(b'}')
+                        if ser.read(1) == bytes([223]):
+                            print(port)
+                            continue
+                except serial.SerialException:
+                    pass
+
+        # get some more hardware information
+        machine_str = {3: 'r2.0-2.5', 4: '2+ r1.0'}.get(machine_type, 'unknown')
+        serial_number = get_serial_number_from_port(self.port)
         pcb_rev = self.query(b'v', '<B')[0] if v_major > 22 else None
 
         # log hardware information
-        logging.info('Bpod Finite State Machine ' + machine_str)
-        logging.info(f'Serial number {serial_number}') if serial_number else None
-        logging.info(f'Circuit board revision {pcb_rev}') if pcb_rev else None
-        logging.info('Firmware version {}.{}'.format(*version))
+        logger.info(f'Bpod Finite State Machine {machine_str}')
+        logger.info(f'Serial number {serial_number}') if serial_number else None
+        logger.info(f'PCB revision {pcb_rev}') if pcb_rev else None
+        logger.info('Firmware version {}.{}'.format(*version))
 
         # get hardware self-description
-        info: list[Any] = [serial_number, version, machine_type, machine_str, pcb_rev]
-        if v_major > 22:
-            info.extend(self.query(b'H', '<2H6B'))
-        else:
-            info.extend(self.query(b'H', '<2H5B'))
-            info.insert(-4, 3)  # max bytes per serial msg always = 3
+        info: list[Any] = [
+            serial_number,
+            version,
+            machine_type,
+            machine_str,
+            pcb_rev,
+        ]
+        info.extend(self.query(b'H', '<2H6B'))
         info.extend(self.read(f'<{info[-1]}s1B'))
-        self.info = Bpod._Info(*info, *self.read(f'<{info[-1]}s'))
+        info.extend(self.read(f'<{info[-1]}s'))
+        self.info = Bpod._Info(*info)
 
         def collect_channels(description: bytes, dictionary: dict, channel_cls: type):
             """
@@ -285,20 +334,20 @@ class Bpod(SerialSingleton):
             cls_name = f'{channel_cls.__name__.lower()}s'
             setattr(self, cls_name, NamedTuple(cls_name, types)._make(channels))
 
-        logging.debug('Configuring I/O ports')
+        logger.debug('Configuring I/O ports')
         input_dict = {b'B': 'BNC', b'V': 'Valve', b'P': 'Port', b'W': 'Wire'}
         output_dict = {b'B': 'BNC', b'V': 'Valve', b'P': 'PWM', b'W': 'Wire'}
         collect_channels(self.info.input_description_array, input_dict, Input)
         collect_channels(self.info.output_description_array, output_dict, Output)
 
-        # logging.debug("Configuring modules")
+        # logger.debug("Configuring modules")
         # self.modules = Modules(self)
 
     def close(self):
         """Disconnect the state machine and close the serial connection."""
         if not self.is_open:
             return
-        logging.debug('Disconnecting state machine')
+        logger.debug('Disconnecting state machine')
         self.write(b'Z')
         super().close()
 
@@ -351,7 +400,7 @@ class Bpod(SerialSingleton):
         #     self._children = modules
 
 
-class Channel:
+class Channel(ABC):
     @abstractmethod
     def __init__(self, bpod: Bpod, name: str, io_type: bytes, index: int):
         """
@@ -482,14 +531,14 @@ def find_bpod_ports() -> Iterator[str]:
     .. code-block:: python
 
         for port in Bpod.find():
-            print(f"Bpod on {port}")
+            print(f'Bpod on {port}')
         # Bpod on COM3
         # Bpod on COM6
     """
-    for port in (p for p in list_ports.comports() if p.vid == 0x16C0):
+    for port in (p for p in list_ports.comports() if p.vid == VID_TEENSY):
         try:
-            with serial.Serial(port.name, timeout=0.2) as ser:
+            with serial.Serial(port.device, timeout=0.2) as ser:
                 if ser.read(1) == bytes([222]):
-                    yield port.name
+                    yield port.device
         except serial.SerialException:
             pass
