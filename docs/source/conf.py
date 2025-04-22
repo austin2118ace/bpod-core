@@ -31,7 +31,6 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
-    'sphinx.ext.inheritance_diagram',
     'sphinx_copybutton',
     'sphinx_autodoc_typehints',
 ]

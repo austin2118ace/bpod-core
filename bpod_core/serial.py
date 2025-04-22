@@ -1,3 +1,5 @@
+"""Module providing extended serial communication functionality."""
+
 import ctypes
 import logging
 import struct

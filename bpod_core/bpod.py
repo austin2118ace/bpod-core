@@ -1,4 +1,4 @@
-from __future__ import annotations
+"""Module for interfacing with the Bpod Finite State Machine."""
 
 import logging
 from abc import ABC, abstractmethod
