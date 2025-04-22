@@ -267,22 +267,22 @@ class TestBpodHandshake:
 
     def test_handshake_success(self, mock_bpod, caplog):
         caplog.set_level(logging.DEBUG)
-        mock_bpod.serial0.validate_response.return_value = True
+        mock_bpod.serial0.verify.return_value = True
         Bpod._handshake(mock_bpod)
-        mock_bpod.serial0.validate_response.assert_called_once_with(b'6', b'5')
+        mock_bpod.serial0.verify.assert_called_once_with(b'6', b'5')
         mock_bpod.serial0.reset_input_buffer.assert_called_once()
         assert len(caplog.records) == 1
         assert caplog.records[0].levelname == 'DEBUG'
         assert 'successful' in caplog.records[0].message
 
     def test_handshake_failure_1(self, mock_bpod):
-        mock_bpod.serial0.validate_response.return_value = False
+        mock_bpod.serial0.verify.return_value = False
         with pytest.raises(BpodError, match='Handshake .* failed'):
             Bpod._handshake(mock_bpod)
         mock_bpod.serial0.reset_input_buffer.assert_called_once()
 
     def test_handshake_failure_2(self, mock_bpod):
-        mock_bpod.serial0.validate_response.side_effect = SerialException
+        mock_bpod.serial0.verify.side_effect = SerialException
         with pytest.raises(BpodError, match='Handshake .* failed'):
             Bpod._handshake(mock_bpod)
         mock_bpod.serial0.reset_input_buffer.assert_called_once()

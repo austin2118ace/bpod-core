@@ -2,7 +2,7 @@ import ctypes
 import logging
 import struct
 from collections.abc import Iterable, Sequence
-from typing import Any, overload
+from typing import Any
 
 import numpy as np
 import serial
@@ -13,6 +13,27 @@ logger = logging.getLogger(__name__)
 
 
 class ExtendedSerial(serial.Serial):
+    """Enhances :class:`serial.Serial` with additional functionality."""
+
+    def write(self, data: Any) -> int | None:
+        """
+        Write data to the serial port.
+
+        This method extends :meth:`serial.Serial.write` with support for NumPy types,
+        unsigned 8-bit integers, strings (interpreted as utf-8) and iterables.
+
+        Parameters
+        ----------
+        data : any
+            Data to be written to the serial port.
+
+        Returns
+        -------
+        int or None
+            Number of bytes written to the serial port.
+        """
+        return super().write(to_bytes(data))
+
     def write_struct(self, data: Sequence[Any], format_string: str) -> int | None:
         """
         Write structured data to the serial port.
@@ -23,8 +44,8 @@ class ExtendedSerial(serial.Serial):
         Parameters
         ----------
         data : Sequence[Any]
-            A sequence of data to be packed and written. The length of this sequence
-            must match the number of format specifiers in `format_string`.
+            A sequence of data to be packed and written, corresponding to the format
+            specifiers in `format_string`.
 
         format_string : str
             A format string that specifies the layout of the data. It should be
@@ -38,9 +59,9 @@ class ExtendedSerial(serial.Serial):
             operation fails.
         """
         size = struct.calcsize(format_string)
-        buff = ctypes.create_string_buffer(size)
-        struct.pack_into(format_string, buff, 0, *data)
-        return super().write(buff)
+        buffer = ctypes.create_string_buffer(size)
+        struct.pack_into(format_string, buffer, 0, *data)
+        return super().write(buffer)
 
     def read_struct(self, format_string: str) -> tuple[Any, ...]:
         """
@@ -66,133 +87,126 @@ class ExtendedSerial(serial.Serial):
         n_bytes = struct.calcsize(format_string)
         return struct.unpack(format_string, super().read(n_bytes))
 
-    def write(self, data: tuple[Sequence[Any], str] | Any) -> int | None:
-        """
-        Write data to the Bpod.
-
-        Parameters
-        ----------
-        data : any
-            Data to be written to the Bpod.
-            See https://docs.python.org/3/library/struct.html#format-characters
-
-        Returns
-        -------
-        int or None
-            Number of bytes written to the Bpod.
-        """
-        if isinstance(data, tuple()):
-            return self.write_struct(data=data[0], format_string=data[1])
-        else:
-            return super().write(to_bytes(data))
-
-    @overload
-    def read(self, data_specifier: int = 1) -> bytes: ...
-
-    @overload
-    def read(self, data_specifier: str) -> tuple[Any, ...]: ...
-
-    def read(self, data_specifier=1):
+    def query(self, query, size: int = 1) -> bytes:
         r"""
-        Read data from the Bpod.
+        Query data from the serial port.
 
-        Parameters
-        ----------
-        data_specifier : int or str, default: 1
-            The number of bytes to receive from the serial device, or a format string
-            for unpacking.
-
-            When providing an integer, the specified number of bytes will be returned
-            as a bytestring. When providing a `format string`_, the data will be
-            unpacked into a tuple accordingly. Format strings follow the conventions of
-            the :mod:`struct` module.
-
-            .. _format string:
-                https://docs.python.org/3/library/struct.html#format-characters
-
-        Returns
-        -------
-        bytes or tuple[Any]
-            Data returned by the serial device. By default, data is formatted as a
-            bytestring. Alternatively, when provided with a format string, data will
-            be unpacked into a tuple according to the specified format string.
-        """
-        if isinstance(data_specifier, str):
-            return self.read_struct(format_string=data_specifier)
-        else:
-            return super().read(size=data_specifier)
-
-    @overload
-    def query(self, query: bytes | Sequence[Any], data_specifier: int = 1) -> bytes: ...
-
-    @overload
-    def query(
-        self, query: bytes | Sequence[Any], data_specifier: str
-    ) -> tuple[Any, ...]: ...
-
-    def query(self, query, data_specifier=1):
-        r"""
-        Query data from the Bpod.
-
-        This method is a combination of :py:meth:`write` and :py:meth:`read`.
+        This method is a combination of :meth:`write` and :meth:`~serial.Serial.read`.
 
         Parameters
         ----------
         query : any
-            Query to be sent to the Bpod.
-        data_specifier : int or str, default: 1
-            The number of bytes to receive from the Bpod, or a format string for
-            unpacking.
-
-            When providing an integer, the specified number of bytes will be returned
-            as a bytestring. When providing a `format string`_, the data will be
-            unpacked into a tuple accordingly. Format strings follow the conventions of
-            the :py:mod:`struct` module.
-
-            .. _format string:
-                https://docs.python.org/3/library/struct.html#format-characters
+            Query to be sent to the serial port.
+        size : int, default: 1
+            The number of bytes to receive from the serial port.
 
         Returns
         -------
-        bytes or tuple[Any]
-            Data returned by the Bpod. By default, data is formatted as a bytestring.
-            Alternatively, when provided with a format string, data will be unpacked
-            into a tuple according to the specified format string.
-
-
-        Examples
-        --------
-        Query 4 bytes of data from a Bpod device - first interpreted as a bytestring,
-        then as a tuple of two unsigned short integers:
-
-        .. code-block:: python
-            :emphasize-lines: 2
-
-            my_bpod.query(b"F", 4)
-            b'\\x16\\x00\\x03\\x00'
-            my_bpod.query(b"F", '2H')
-            (22, 3)
+        bytes
+            Data returned by the serial device in response to the query.
         """
         self.write(query)
-        return self.read(data_specifier)
+        return self.read(size)
 
-    def validate_response(self, query, expected_response: bytes) -> bool:
+    def query_struct(
+        self, query: bytes | Sequence[Any], format_string: str
+    ) -> tuple[Any, ...]:
+        """
+        Query structured data from the serial port.
+
+        This method queries a specified number of bytes from the serial port and
+        unpacks it into a tuple according to the provided format string.
+
+        Parameters
+        ----------
+        query : any
+            Query to be sent to the serial port.
+        format_string : str
+            A format string that specifies the layout of the data to be read. It should
+            be compatible with the `struct` module's format specifications.
+            See https://docs.python.org/3/library/struct.html#format-characters
+
+        Returns
+        -------
+        tuple[Any, ...]
+            A tuple containing the unpacked data read from the serial port. The
+            structure of the tuple corresponds to the format specified in
+            `format_string`.
+        """
+        self.write(query)
+        return self.read_struct(format_string)
+
+    def verify(self, query, expected_response: bytes) -> bool:
+        """
+        Verify the response of the serial port.
+
+        This method sends a query to the serial port and checks if the response
+        matches the expected response.
+
+        Parameters
+        ----------
+        query : any
+            The query to be sent to the serial port.
+        expected_response : bytes
+            The expected response from the serial port.
+
+        Returns
+        -------
+        bool
+            True if the response matches the expected response, False otherwise.
+        """
         return self.query(query) == expected_response
 
 
-class SerialReaderProtocolRaw(Protocol):
+class ChunkedSerialReader(Protocol):
+    """
+    A protocol for reading chunked data from a serial port.
+
+    This class provides methods to buffer incoming data and retrieve it in chunks.
+    """
+
     def __init__(self):
+        """Initialize the protocol with an empty buffer."""
         self._buf = bytearray()
 
     def put(self, data):
+        """
+        Add data to the buffer.
+
+        Parameters
+        ----------
+        data : bytes
+            The binary data to be added to the buffer.
+        """
         self._buf.extend(data)
 
     def get(self, size) -> bytearray:
+        """
+        Retrieve a specified amount of data from the buffer.
+
+        Parameters
+        ----------
+        size : int
+            The number of bytes to retrieve from the buffer.
+
+        Returns
+        -------
+        bytearray
+            The retrieved data.
+        """
         data: bytearray = self._buf[:size]
-        self._buf[:size] = b''
+        del _buf[:size]
         return data
 
     def __len__(self) -> int:
+        """
+        Get the current size of the buffer.
+
+        Returns
+        -------
+        int
+            The number of bytes currently in the buffer.
+        """
         return len(self._buf)
 
     def data_received(self, data):

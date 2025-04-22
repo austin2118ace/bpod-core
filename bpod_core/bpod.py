@@ -26,25 +26,39 @@ logger = logging.getLogger(__name__)
 class VersionInfo(NamedTuple):
     """Represents the Bpod's on-board hardware configuration."""
 
-    firmware: tuple[int, int]  # Firmware version (major, minor)
-    machine: int  # Machine type (numerical)
-    pcb: int | None  # PCB revision, if applicable
+    firmware: tuple[int, int]
+    """Firmware version (major, minor)"""
+    machine: int
+    """Machine type (numerical)"""
+    pcb: int | None
+    """PCB revision, if applicable"""
 
 
 class HardwareConfiguration(NamedTuple):
     """Represents the Bpod's on-board hardware configuration."""
 
-    max_states: int  # Maximum number of states supported by the Bpod
-    timer_period: int  # Timer period in microseconds
-    max_serial_events: int  # Maximum number of serial events supported
-    max_bytes_per_serial_message: int  # Maximum bytes allowed per serial message
-    n_global_timers: int  # Number of global timers supported
-    n_global_counters: int  # Number of global counters supported
-    n_conditions: int  # Number of condition-events supported
-    n_inputs: int  # Number of input channels
-    input_description: bytes  # Description of input channel types
-    n_outputs: int  # Number of output channels available
-    output_description: bytes  # Description of output channels types
+    max_states: int
+    """Maximum number of supported states in a single state machine description."""
+    timer_period: int
+    """Period of the state machine's refresh cycle during a trial in microseconds."""
+    max_serial_events: int
+    """Maximum number of behavior events allocatable among connected modules."""
+    max_bytes_per_serial_message: int
+    """Maximum number of bytes allowed per serial message."""
+    n_global_timers: int
+    """Number of global timers supported."""
+    n_global_counters: int
+    """Number of global counters supported."""
+    n_conditions: int
+    """Number of condition-events supported."""
+    n_inputs: int
+    """Number of input channels."""
+    input_description: bytes
+    """Array indicating the state machine's onboard input channel types."""
+    n_outputs: int
+    """Number of channels in the state machine's output channel description array."""
+    output_description: bytes
+    """Array indicating the state machine's onboard output channel types."""
 
 
 class BpodError(Exception):
@@ -62,15 +76,18 @@ class Bpod:
     _version: VersionInfo
     _hardware_config: HardwareConfiguration
     serial0: ExtendedSerial
+    """Primary serial device for communication with the Bpod."""
     serial1: ExtendedSerial
+    """Secondary serial device for communication with the Bpod."""
     serial2: ExtendedSerial | None = None
+    """Tertiary serial device for communication with the Bpod - used by Bpod 2+ only."""
 
     @validate_call
     def __init__(self, port: str | None = None, serial_number: str | None = None):
         logger.info(f'bpod_core {bpod_core_version}')
 
         # identify Bpod by port or serial number
-        port, self._serial_number = self._identify_bpod(port, serial_number)
+        port, serial_number = self._identify_bpod(port, serial_number)
 
         # open primary serial port
         self.serial0 = ExtendedSerial()
@@ -94,7 +111,7 @@ class Bpod:
         logger.info(f'Connected to Bpod Finite State Machine {machine} on {self.port}')
         logger.info(
             f'Firmware Version {"{}.{}".format(*self.version.firmware)}, '
-            f'Serial Number {self.serial_number}, PCB Revision {self.version.pcb}'
+            f'Serial Number {serial_number}, PCB Revision {self.version.pcb}'
         )
 
     def __enter__(self):
@@ -196,8 +213,8 @@ class Bpod:
         BpodError
             If the hardware version or firmware version is not supported.
         """
-        v_major, machine_type = self.serial0.query(b'F', '<2H')
-        v_minor = self.serial0.query(b'f', '<H')[0] if v_major > 22 else 0
+        v_major, machine_type = self.serial0.query_struct(b'F', '<2H')
+        v_minor = self.serial0.query_struct(b'f', '<H')[0] if v_major > 22 else 0
         v_firmware = (v_major, v_minor)
         if not (MIN_BPOD_HW_VERSION <= machine_type <= MAX_BPOD_HW_VERSION):
             raise BpodError(
@@ -209,18 +226,18 @@ class Bpod:
                 f'which is not supported. Please update the device to '
                 f'firmware v{MIN_BPOD_FW_VERSION[0]}.{MIN_BPOD_FW_VERSION[1]} or later.'
             )
-        pcv_rev = self.serial0.query(b'v', '<B')[0] if v_major > 22 else None
+        pcv_rev = self.serial0.query_struct(b'v', '<B')[0] if v_major > 22 else None
         self._version = VersionInfo(v_firmware, machine_type, pcv_rev)
 
     def _get_hardware_configuration(self) -> None:
         """Retrieve the Bpod's onboard hardware configuration."""
         if self.version.firmware > (22, 0):
-            hardware_conf = list(self.serial0.query(b'H', '<2H6B'))
+            hardware_conf = list(self.serial0.query_struct(b'H', '<2H6B'))
         else:
-            hardware_conf = list(self.serial0.query(b'H', '<2H5B'))
+            hardware_conf = list(self.serial0.query_struct(b'H', '<2H5B'))
             hardware_conf.insert(-4, 3)  # max bytes per serial msg always = 3
-        hardware_conf.extend(self.serial0.read(f'<{hardware_conf[-1]}s1B'))
-        hardware_conf.extend(self.serial0.read(f'<{hardware_conf[-1]}s'))
+        hardware_conf.extend(self.serial0.read_struct(f'<{hardware_conf[-1]}s1B'))
+        hardware_conf.extend(self.serial0.read_struct(f'<{hardware_conf[-1]}s'))
         self._hardware_config = HardwareConfiguration(*hardware_conf)
 
     def _configure_channels(self) -> None:
@@ -256,11 +273,7 @@ class Bpod:
         """Detect additional USB-serial ports."""
         # First, assemble a list of candidate ports
         candidate_ports = [
-            p.device
-            for p in comports()
-            if p.vid in VIDS_BPOD
-            and p.serial_number == self.serial_number
-            and p.device != self.port
+            p.device for p in comports() if p.vid in VIDS_BPOD and p.device != self.port
         ]
 
         # Exclude those devices from the list that are already sending a discovery byte
@@ -311,7 +324,7 @@ class Bpod:
         """
         try:
             self.serial0.timeout = 0.2
-            if not self.serial0.validate_response(b'6', b'5'):
+            if not self.serial0.verify(b'6', b'5'):
                 raise BpodError(f'Handshake with device on {self.port} failed')
             self.serial0.timeout = None
         except SerialException as e:
@@ -320,40 +333,14 @@ class Bpod:
             self.serial0.reset_input_buffer()
         logger.debug(f'Handshake with Bpod on {self.port} successful')
 
-        def update_modules(self):
-            pass
-            # self.write(b'M')
-            # modules = []
-            # for i in range(len(modules)):
-            #     if self.read() == bytes([1]):
-            #         continue
-            #     firmware_version = self.read(4, np.uint32)[0]
-            #     name = self.read(int(self.read())).decode('utf-8')
-            #     port = i + 1
-            #     m = Module()
-            #     while self.read() == b'\x01':
-            #         match self.read():
-            #             case b'#':
-            #                 number_of_events = self.read(1, np.uint8)[0]
-            #             case b'E':
-            #                 for event_index in range(self.read(1, np.uint8)[0]):
-            #                     l_event_name = self.read(1, np.uint8)[0]
-            #                     module['events']['index'] = event_index
-            #                     module['events']['name'] = self.read(l_event_name,
-            #                                                          str)[0]
-            #         modules[i] = module
-            #     self._children = modules
-
     @property
     def port(self) -> str | None:
+        """The port of the Bpod's primary serial device."""
         return self.serial0.port
 
     @property
-    def serial_number(self) -> str | None:
-        return self._serial_number
-
-    @property
     def version(self) -> VersionInfo:
+        """Version information of the Bpod's firmware and hardware."""
         return self._version
 
     def open(self):
@@ -378,8 +365,35 @@ class Bpod:
             self.serial0.write(b'Z')
             self.serial0.close()
 
+    def update_modules(self):
+        self.serial0.write(b'M')
+        # modules = []
+        # for i in range(len(modules)):
+        #     if self.serial0.read() == bytes([1]):
+        #         continue
+        #     firmware_version = self.serial0.read(4, np.uint32)[0]
+        #     name = self.read(int(self.serial0.read())).decode('utf-8')
+        #     port = i + 1
+        #     m = Module()
+        #     while self.serial0.read() == b'\x01':
+        #         match self.serial0.read():
+        #             case b'#':
+        #                 number_of_events = self.serial0.read(1, np.uint8)[0]
+        #             case b'E':
+        #                 for event_index in range(self.serial0.read(1, np.uint8)[0]):
+        #                     l_event_name = self.serial0.read(1, np.uint8)[0]
+        #                     module['events']['index'] = event_index
+        #                     module['events']['name'] = self.serial0.read(
+        #                         l_event_name, str
+        #                     )[0]
+        #         modules[i] = module
+        #     self._children = modules
+        pass
+
 
 class Channel(ABC):
+    """Abstract base class representing a channel on the Bpod device."""
+
     @abstractmethod
     def __init__(self, bpod: Bpod, name: str, io_type: bytes, index: int):
         """
@@ -401,12 +415,15 @@ class Channel(ABC):
         self.index = index
         self._query = bpod.serial0.query
         self._write = bpod.serial0.write
+        self._validate_response = bpod.serial0.verify
 
     def __repr__(self):
         return self.__class__.__name__ + '()'
 
 
 class Input(Channel):
+    """Input channel class representing a digital input channel."""
+
     def __init__(self, *args, **kwargs):
         """
         Input channel class representing a digital input channel.
@@ -427,7 +444,8 @@ class Input(Channel):
         bool
             True if the input channel is active, False otherwise.
         """
-        return self._query(['I', self.index], 1) == b'\x01'
+        return self._validate_response(b'I' + bytes([self.index]), b'\x01')
+        # return self._query(['I', self.index], 1) == b'\x01'
 
     def override(self, state: bool) -> None:
         """
@@ -438,7 +456,7 @@ class Input(Channel):
         state : bool
             The state to set for the input channel.
         """
-        self._write(['V', state])
+        self._write([b'V', state])
 
     def enable(self, state: bool) -> None:
         """
@@ -453,6 +471,8 @@ class Input(Channel):
 
 
 class Output(Channel):
+    """Output channel class representing a digital output channel."""
+
     def __init__(self, *args, **kwargs):
         """
         Output channel class representing a digital output channel.
@@ -476,4 +496,4 @@ class Output(Channel):
         """
         if isinstance(state, int) and self.io_type in (b'D', b'B', b'W'):
             state = state > 0
-        self._write(['O', self.index, bytes([state])])
+        self._write([b'O', self.index, bytes([state])])
