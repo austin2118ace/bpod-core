@@ -195,7 +195,7 @@ class ChunkedSerialReader(Protocol):
             The retrieved data.
         """
         data: bytearray = self._buf[:size]
-        del _buf[:size]
+        del self._buf[:size]
         return data
 
     def __len__(self) -> int:
