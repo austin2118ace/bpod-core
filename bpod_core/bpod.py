@@ -20,7 +20,7 @@ MIN_BPOD_FW_VERSION = (23, 0)  # minimum supported firmware version (major, mino
 MIN_BPOD_HW_VERSION = 3  # minimum supported hardware version
 MAX_BPOD_HW_VERSION = 4  # maximum supported hardware version
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class VersionInfo(NamedTuple):
@@ -67,7 +67,7 @@ class Bpod:
 
     @validate_call
     def __init__(self, port: str | None = None, serial_number: str | None = None):
-        log.info(f'bpod_core {bpod_core_version}')
+        logger.info(f'bpod_core {bpod_core_version}')
 
         # identify Bpod by port or serial number
         port, self._serial_number = self._identify_bpod(port, serial_number)
@@ -91,8 +91,8 @@ class Bpod:
 
         # log hardware information
         machine = {3: 'r2.0-2.5', 4: '2+ r1.0'}.get(self.version.machine, 'unknown')
-        log.info(f'Connected to Bpod Finite State Machine {machine} on {self.port}')
-        log.info(
+        logger.info(f'Connected to Bpod Finite State Machine {machine} on {self.port}')
+        logger.info(
             f'Firmware Version {"{}.{}".format(*self.version.firmware)}, '
             f'Serial Number {self.serial_number}, PCB Revision {self.version.pcb}'
         )
@@ -246,7 +246,7 @@ class Bpod:
             cls_name = f'{channel_cls.__name__.lower()}s'
             setattr(self, cls_name, NamedTuple(cls_name, types)._make(channels))
 
-        log.debug('Configuring I/O ports')
+        logger.debug('Configuring I/O ports')
         input_dict = {b'B': 'BNC', b'V': 'Valve', b'P': 'Port', b'W': 'Wire'}
         output_dict = {b'B': 'BNC', b'V': 'Valve', b'P': 'PWM', b'W': 'Wire'}
         collect_channels(self._hardware_config.input_description, input_dict, Input)
@@ -318,7 +318,7 @@ class Bpod:
             raise BpodError(f'Handshake with device on {self.port} failed') from e
         finally:
             self.serial0.reset_input_buffer()
-        log.debug(f'Handshake with Bpod on {self.port} successful')
+        logger.debug(f'Handshake with Bpod on {self.port} successful')
 
         def update_modules(self):
             pass

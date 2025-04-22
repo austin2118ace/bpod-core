@@ -1,7 +1,6 @@
 import ctypes
 import logging
 import struct
-import threading
 from collections.abc import Iterable, Sequence
 from typing import Any, overload
 
@@ -9,13 +8,8 @@ import numpy as np
 import serial
 from serial.serialutil import to_bytes as serial_to_bytes  # type: ignore[attr-defined]
 from serial.threaded import Protocol
-from serial.tools.list_ports import comports
 
 logger = logging.getLogger(__name__)
-
-
-class SerialSingletonException(serial.SerialException):
-    pass
 
 
 class ExtendedSerial(serial.Serial):
@@ -186,107 +180,6 @@ class ExtendedSerial(serial.Serial):
         return self.query(query) == expected_response
 
 
-class SerialSingleton(ExtendedSerial):
-    _instances: dict[str | None, serial.Serial] = dict()
-    _initialized = False
-    _lock = threading.Lock()
-
-    def __new__(
-        cls,
-        port: str | None = None,
-        serial_number: str | None = None,
-        *args,
-        **kwargs,
-    ):
-        # identify the device by its serial number
-        if port is None and serial_number is not None:
-            port = get_port_from_serial_number(serial_number) or port
-
-        # implement singleton
-        with cls._lock:
-            instance = SerialSingleton._instances.get(port, None)
-            if instance is None:
-                logger.debug(f'Creating new {cls.__name__} instance on {port}')
-                instance = super().__new__(cls)
-                SerialSingleton._instances[port] = instance
-            else:
-                instance_name = type(instance).__name__
-                if instance_name != cls.__name__:
-                    raise SerialSingletonException(
-                        f'{port} is already in use by an instance of {instance_name}'
-                    )
-                logger.debug(f'Using existing {instance_name} instance on {port}')
-            return instance
-
-    def __init__(self, port: str | None = None, connect: bool = True, **kwargs) -> None:
-        if self._initialized:
-            return
-
-        super().__init__(**kwargs)
-
-        serial.Serial.port.fset(self, port)  # type: ignore[attr-defined]
-        if port is not None and connect is True:
-            self.open()
-
-        self.port_info = next((p for p in comports() if p.device == self.port), None)
-
-        self._initialized = True
-
-    def __del__(self) -> None:
-        self.close()
-        with self._lock:
-            if self.port in SerialSingleton._instances:
-                logger.debug(f'Deleting {type(self).__name__} instance on {self.port}')
-                SerialSingleton._instances.pop(self.port)
-
-    def open(self) -> None:
-        super().open()
-        logger.debug(f'Serial connection to {self.port} opened')
-
-    def close(self) -> None:
-        super().close()
-        logger.debug(f'Serial connection to {self.port} closed')
-
-    @property
-    def port(self) -> str | None:
-        """
-        Get the serial device's communication port.
-
-        Returns
-        -------
-        str
-            The serial port (e.g., 'COM3', '/dev/ttyUSB0') used by the serial device.
-        """
-        return super().port
-
-    @port.setter
-    def port(self, port: str | None):
-        """
-        Set the serial device's communication port.
-
-        This setter allows changing the communication port before the object is
-        instantiated. Once the object is instantiated, attempting to change the port
-        will raise a SerialSingletonException.
-
-        Parameters
-        ----------
-        port : str
-            The new communication port to be set (e.g., 'COM3', '/dev/ttyUSB0').
-
-        Raises
-        ------
-        SerialSingletonException
-            If an attempt is made to change the port after the object has been
-            instantiated.
-        """
-        if self._initialized:
-            raise SerialSingletonException(
-                'Port cannot be changed after instantiation.'
-            )
-        if port is not None:
-            serial.Serial.port.fset(self, port)  # type: ignore[attr-defined]
-
-
 class SerialReaderProtocolRaw(Protocol):
     def __init__(self):
         self._buf = bytearray()
@@ -345,45 +238,3 @@ def to_bytes(data: Any) -> bytes:
             return b''.join(to_bytes(item) for item in data)
         case _:
             return serial_to_bytes(data)  # type: ignore[no-any-return]
-
-
-def get_port_from_serial_number(serial_number: str) -> str | None:
-    """
-    Retrieve the com port of a USB serial device identified by its serial number.
-
-    Parameters
-    ----------
-    serial_number : str
-       The serial number of the USB device that you want to obtain the communication
-       port of.
-
-    Returns
-    -------
-    str or None
-       The communication port of the USB serial device that matches the serial number
-       provided by the user. The function will return None if no such device was found.
-    """
-    port_info = comports()
-    port_match = next((p for p in port_info if p.serial_number == serial_number), None)
-    return port_match.name if port_match else None
-
-
-def get_serial_number_from_port(port: str | None) -> str | None:
-    """
-    Retrieve the serial number of a USB serial device identified by its com port.
-
-    Parameters
-    ----------
-    port : str
-        The communication port of the USB serial device for which you want to retrieve
-        the serial number.
-
-    Returns
-    -------
-    str or None
-        The serial number of the USB serial device corresponding to the provided
-        communication port. Returns None if no device matches the port.
-    """
-    port_info = comports()
-    port_match = next((p for p in port_info if p.name == port), None)
-    return port_match.serial_number if port_match else None
