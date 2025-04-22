@@ -11,10 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Major reorganization of the existing codebase.
+- Renamed `serial_extensions` module to `serial`.
 
 ### Removed
 
-- `SerialSingleton` class
+- Removed `SerialSingleton` class.
 
 ## [0.1.0-alpha] - 2023-03-05
 

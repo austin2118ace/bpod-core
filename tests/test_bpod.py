@@ -6,7 +6,7 @@ import pytest
 from serial import SerialException
 
 from bpod_core.bpod import Bpod, BpodError
-from bpod_core.serial_extensions import ExtendedSerial
+from bpod_core.serial import ExtendedSerial
 
 
 class TestBpodIdentifyBpod:
@@ -137,7 +137,7 @@ def mock_serial():
         nonlocal response_buffer
         return len(response_buffer)
 
-    patched_object_base = 'bpod_core.serial_extensions.serial.Serial'
+    patched_object_base = 'bpod_core.serial.serial.Serial'
     with (
         patch(f'{patched_object_base}.write', side_effect=write),
         patch(f'{patched_object_base}.read', side_effect=read),
