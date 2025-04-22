@@ -55,31 +55,39 @@ intersphinx_mapping = {
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'sphinx_rtd_theme'
+html_theme_options = {
+    'collapse_navigation': True,
+    'sticky_navigation': True,
+    'navigation_depth': 4,
+    'includehidden': True,
+    'titles_only': False,
+    'display_version': True,
+}
 
 # -- Settings for automatic API generation -----------------------------------
 autodoc_mock_imports = ['_typeshed']
-autodoc_class_signature = 'separated'         # 'mixed', 'separated'
-autodoc_member_order = 'groupwise'            # 'alphabetical', 'groupwise', 'bysource'
+autodoc_class_signature = 'separated'  # 'mixed', 'separated'
+autodoc_member_order = 'groupwise'  # 'alphabetical', 'groupwise', 'bysource'
 autodoc_inherit_docstrings = False
-autodoc_typehints = 'description'             # 'description', 'signature', 'none', 'both'
+autodoc_typehints = 'description'  # 'description', 'signature', 'none', 'both'
 autodoc_typehints_description_target = 'all'  # 'all', 'documented', 'documented_params'
-autodoc_typehints_format = 'short'            # 'fully-qualified', 'short'
+autodoc_typehints_format = 'short'  # 'fully-qualified', 'short'
 
 autosummary_generate = True
 autosummary_imported_members = False
 
 napoleon_google_docstring = False
 napoleon_numpy_docstring = True
-napoleon_include_init_with_doc = True
+napoleon_include_init_with_doc = False
 napoleon_include_private_with_doc = False
 napoleon_include_special_with_doc = False
 napoleon_use_admonition_for_examples = True
 napoleon_use_admonition_for_notes = True
 napoleon_use_admonition_for_references = True
-napoleon_use_ivar = False
-napoleon_use_param = False
+napoleon_use_ivar = True
+napoleon_use_param = True
 napoleon_use_rtype = True
 napoleon_use_keyword = True
 napoleon_preprocess_types = True
 napoleon_type_aliases = None
-napoleon_attr_annotations = False
+napoleon_attr_annotations = True
