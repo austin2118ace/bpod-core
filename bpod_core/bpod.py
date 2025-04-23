@@ -19,6 +19,18 @@ VIDS_BPOD = [0x16C0]  # vendor IDs of supported Bpod devices
 MIN_BPOD_FW_VERSION = (23, 0)  # minimum supported firmware version (major, minor)
 MIN_BPOD_HW_VERSION = 3  # minimum supported hardware version
 MAX_BPOD_HW_VERSION = 4  # maximum supported hardware version
+CHANNEL_TYPES = {
+    b'U': 'UART',
+    b'X': 'USB',
+    b'Z': 'USB_ext',
+    b'F': 'FlexIO',
+    b'S': 'SPI',
+    b'D': 'Digital',
+    b'B': 'BNC',
+    b'W': 'Wire',
+    b'V': 'Valve',
+    b'P': 'Port',
+}
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +115,7 @@ class Bpod:
         self._get_hardware_configuration()
 
         # configure input and output channels
-        self._configure_channels()
+        self._configure_io()
 
         # detect additional serial ports
         self._detect_additional_serial_ports()
@@ -215,6 +227,7 @@ class Bpod:
         BpodError
             If the hardware version or firmware version is not supported.
         """
+        logger.debug('Retrieving version information')
         v_major, machine_type = self.serial0.query_struct(b'F', '<2H')
         v_minor = self.serial0.query_struct(b'f', '<H')[0] if v_major > 22 else 0
         v_firmware = (v_major, v_minor)
@@ -233,6 +246,7 @@ class Bpod:
 
     def _get_hardware_configuration(self) -> None:
         """Retrieve the Bpod's onboard hardware configuration."""
+        logger.debug("Retrieving the Bpod's onboard hardware configuration")
         if self.version.firmware > (22, 0):
             hardware_conf = list(self.serial0.query_struct(b'H', '<2H6B'))
         else:
@@ -242,46 +256,39 @@ class Bpod:
         hardware_conf.extend(self.serial0.read_struct(f'<{hardware_conf[-1]}s'))
         self._hardware_config = HardwareConfiguration(*hardware_conf)
 
-    def _configure_channels(self) -> None:
-        type_dict = {
-            b'U': 'UART',
-            b'X': 'USB',
-            b'Z': 'USB_ext',
-            b'F': 'FlexIO',
-            b'S': 'SPI',
-            b'D': 'Digital',
-            b'B': 'BNC',
-            b'W': 'Wire',
-            b'V': 'Valve',
-            b'P': 'Port',
-        }
-
-        logger.debug('Configuring I/O ports')
+    def _configure_io(self) -> None:
+        """Configure the input and output channels of the Bpod."""
+        logger.debug('Configuring I/O')
         for description, channel_class in (
             (self._hardware_config.input_description, Input),
             (self._hardware_config.output_description, Output),
         ):
             channels = []
             types = []
-            class_name = f'{channel_class.__name__.lower()}s'
+            io_class = f'{channel_class.__name__.lower()}s'
 
+            # loop over the description array and create channels
             for idx in range(len(description)):
                 io_key = description[idx : idx + 1]
-                if bytes(io_key) in type_dict:
+                if bytes(io_key) in CHANNEL_TYPES:
                     n = description[:idx].count(io_key) + 1
-                    name = f'{type_dict[io_key]}{n}'
+                    name = f'{CHANNEL_TYPES[io_key]}{n}'
                     channels.append(channel_class(self, name, io_key, idx))
                     types.append((name, channel_class))
                 else:
-                    raise RuntimeError(f'Unknown {class_name[:-1]} type: {io_key}')
+                    raise RuntimeError(f'Unknown {io_class[:-1]} type: {io_key}')
 
-            setattr(self, class_name, NamedTuple(class_name, types)._make(channels))
+            # store channels to NamedTuple and set the latter as a class attribute
+            named_tuple = NamedTuple(io_class, types)._make(channels)
+            setattr(self, io_class, named_tuple)
 
-        # set the enabled state of the inputs
+        # set the enabled state of the input channels
         self._set_enable_inputs()
 
     def _detect_additional_serial_ports(self) -> None:
         """Detect additional USB-serial ports."""
+        logger.debug('Detecting additional USB-serial ports')
+
         # First, assemble a list of candidate ports
         candidate_ports = [
             p.device for p in comports() if p.vid in VIDS_BPOD and p.device != self.port
@@ -345,6 +352,7 @@ class Bpod:
         logger.debug(f'Handshake with Bpod on {self.port} successful')
 
     def _set_enable_inputs(self) -> bool:
+        logger.debug('Setting enabled state of input channels')
         enable = [i.enabled for i in self.inputs]
         self.serial0.write_struct(f'<c{self._hardware_config.n_inputs}?', b'E', *enable)
         return self.serial0.read(1) == b'\x01'
