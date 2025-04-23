@@ -9,7 +9,7 @@ from serial import SerialException
 from serial.tools.list_ports import comports
 
 from bpod_core import __version__ as bpod_core_version
-from bpod_core.serial import ExtendedSerial
+from bpod_core.com import ExtendedSerial
 
 if TYPE_CHECKING:
     from _typeshed import ReadableBuffer  # noqa: F401
@@ -81,6 +81,8 @@ class Bpod:
     """Secondary serial device for communication with the Bpod."""
     serial2: ExtendedSerial | None = None
     """Tertiary serial device for communication with the Bpod - used by Bpod 2+ only."""
+    inputs: NamedTuple
+    outputs: NamedTuple
 
     @validate_call
     def __init__(self, port: str | None = None, serial_number: str | None = None):
@@ -241,7 +243,7 @@ class Bpod:
         self._hardware_config = HardwareConfiguration(*hardware_conf)
 
     def _configure_channels(self) -> None:
-        def collect_channels(description: bytes, dictionary: dict, channel_cls: type):
+        def collect_channels(description: bytes, channel_cls: type):
             """
             Generate a collection of Bpod channels.
 
@@ -251,23 +253,37 @@ class Bpod:
             """
             channels = []
             types = []
+            type_dict = {
+                b'U': 'UART',
+                b'X': 'USB',
+                b'Z': 'USB_ext',
+                b'F': 'FlexIO',
+                b'S': 'SPI',
+                b'D': 'Digital',
+                b'B': 'BNC',
+                b'W': 'Wire',
+                b'V': 'Valve',
+                b'P': 'Port',
+            }
+            cls_name = f'{channel_cls.__name__.lower()}s'
 
             for idx in range(len(description)):
                 io_key = description[idx : idx + 1]
-                if bytes(io_key) in dictionary:
+                if bytes(io_key) in type_dict:
                     n = description[:idx].count(io_key) + 1
-                    name = f'{dictionary[io_key]}{n}'
+                    name = f'{type_dict[io_key]}{n}'
                     channels.append(channel_cls(self, name, io_key, idx))
                     types.append((name, channel_cls))
+                else:
+                    raise RuntimeError(f'Unknown {cls_name[:-1]} type: {io_key}')
 
-            cls_name = f'{channel_cls.__name__.lower()}s'
             setattr(self, cls_name, NamedTuple(cls_name, types)._make(channels))
 
         logger.debug('Configuring I/O ports')
-        input_dict = {b'B': 'BNC', b'V': 'Valve', b'P': 'Port', b'W': 'Wire'}
-        output_dict = {b'B': 'BNC', b'V': 'Valve', b'P': 'PWM', b'W': 'Wire'}
-        collect_channels(self._hardware_config.input_description, input_dict, Input)
-        collect_channels(self._hardware_config.output_description, output_dict, Output)
+
+        collect_channels(self._hardware_config.input_description, Input)
+        collect_channels(self._hardware_config.output_description, Output)
+        self._enable_inputs()
 
     def _detect_additional_serial_ports(self) -> None:
         """Detect additional USB-serial ports."""
@@ -333,6 +349,12 @@ class Bpod:
             self.serial0.reset_input_buffer()
         logger.debug(f'Handshake with Bpod on {self.port} successful')
 
+    def _enable_inputs(self) -> bool:
+        n_inputs = len(self._hardware_config.input_description)
+        enable = [i.enabled for i in self.inputs]
+        self.serial0.write_struct(f'<c{n_inputs}?', b'E', *enable)
+        return self.serial0.read(1) == b'\x01'
+
     @property
     def port(self) -> str | None:
         """The port of the Bpod's primary serial device."""
@@ -367,28 +389,24 @@ class Bpod:
 
     def update_modules(self):
         self.serial0.write(b'M')
-        # modules = []
-        # for i in range(len(modules)):
-        #     if self.serial0.read() == bytes([1]):
-        #         continue
-        #     firmware_version = self.serial0.read(4, np.uint32)[0]
-        #     name = self.read(int(self.serial0.read())).decode('utf-8')
-        #     port = i + 1
-        #     m = Module()
-        #     while self.serial0.read() == b'\x01':
-        #         match self.serial0.read():
-        #             case b'#':
-        #                 number_of_events = self.serial0.read(1, np.uint8)[0]
-        #             case b'E':
-        #                 for event_index in range(self.serial0.read(1, np.uint8)[0]):
-        #                     l_event_name = self.serial0.read(1, np.uint8)[0]
-        #                     module['events']['index'] = event_index
-        #                     module['events']['name'] = self.serial0.read(
-        #                         l_event_name, str
-        #                     )[0]
-        #         modules[i] = module
-        #     self._children = modules
-        pass
+        print(f'{self.n_modules} modules')
+        for module_index in range(self._hardware_config.input_description.count(b'U')):
+            connected = self.serial0.read(1) == b'\x01'
+            if not connected:
+                continue
+            firmware_version, n = self.serial0.read_struct('<IB')
+            module_name, more_info = self.serial0.read_struct(f'<{n}s?')
+            while more_info:
+                match self.serial0.read(1):
+                    case b'#':
+                        n_serial_events = self.serial0.read_struct('<B')[0]
+                    case b'E':
+                        n_event_names = self.serial0.read(0)
+                        event_names = []
+                        for i_event_name in range(n_event_names):
+                            n = self.serial0.read_struct('<B')[0]
+                            event_names.append(self.serial0.read_struct(f'<{n}s'))
+                more_info = self.serial0.read(1) == b'\x01'
 
 
 class Channel(ABC):
@@ -406,16 +424,14 @@ class Channel(ABC):
         name : str
             The name of the channel.
         io_type : bytes
-            The I/O type of the channel (e.g., 'B', 'V', 'P').
+            The I/O type of the channel (e.g., b'B', b'V', b'P').
         index : int
             The index of the channel.
         """
         self.name = name
         self.io_type = io_type
         self.index = index
-        self._query = bpod.serial0.query
-        self._write = bpod.serial0.write
-        self._validate_response = bpod.serial0.verify
+        self._serial0 = bpod.serial0
 
     def __repr__(self):
         return self.__class__.__name__ + '()'
@@ -424,16 +440,24 @@ class Channel(ABC):
 class Input(Channel):
     """Input channel class representing a digital input channel."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, bpod: Bpod, name: str, io_type: bytes, index: int):
         """
         Input channel class representing a digital input channel.
 
         Parameters
         ----------
-        *args, **kwargs
-            Arguments to be passed to the base class constructor.
+        bpod : Bpod
+            The Bpod instance associated with the channel.
+        name : str
+            The name of the channel.
+        io_type : bytes
+            The I/O type of the channel (e.g., b'B', b'V', b'P').
+        index : int
+            The index of the channel.
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(bpod, name, io_type, index)
+        self._enable_inputs = bpod._enable_inputs
+        self._enabled = True
 
     def read(self) -> bool:
         """
@@ -444,8 +468,7 @@ class Input(Channel):
         bool
             True if the input channel is active, False otherwise.
         """
-        return self._validate_response(b'I' + bytes([self.index]), b'\x01')
-        # return self._query(['I', self.index], 1) == b'\x01'
+        return self._serial0.verify([b'I', self.index], b'\x01')
 
     def override(self, state: bool) -> None:
         """
@@ -456,33 +479,69 @@ class Input(Channel):
         state : bool
             The state to set for the input channel.
         """
-        self._write([b'V', state])
+        self._serial0.write_struct('<cB', b'V', state)
 
-    def enable(self, state: bool) -> None:
+    def enable(self, enabled: bool) -> bool:
         """
         Enable or disable the input channel.
 
         Parameters
         ----------
-        state : bool
+        enabled : bool
+            True to enable the input channel, False to disable.
+
+        Returns
+        -------
+        bool
+            True if the operation was success, False otherwise.
+        """
+        self._enabled = enabled
+        return self._enable_inputs()
+
+    @property
+    def enabled(self) -> bool:
+        """
+        Check if the input channel is enabled.
+
+        Returns
+        -------
+        bool
+            True if the input channel is enabled, False otherwise.
+        """
+        return self._enabled
+
+    @enabled.setter
+    def enabled(self, enabled: bool) -> None:
+        """
+        Enable or disable the input channel.
+
+        Parameters
+        ----------
+        enabled : bool
             True to enable the input channel, False to disable.
         """
-        pass
+        self.enable(enabled)
 
 
 class Output(Channel):
     """Output channel class representing a digital output channel."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, bpod: Bpod, name: str, io_type: bytes, index: int):
         """
         Output channel class representing a digital output channel.
 
         Parameters
         ----------
-        *args, **kwargs
-            Arguments to be passed to the base class constructor.
+        bpod : Bpod
+            The Bpod instance associated with the channel.
+        name : str
+            The name of the channel.
+        io_type : bytes
+            The I/O type of the channel (e.g., b'B', b'V', b'P').
+        index : int
+            The index of the channel.
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(bpod, name, io_type, index)
 
     def override(self, state: bool | int) -> None:
         """
@@ -496,4 +555,4 @@ class Output(Channel):
         """
         if isinstance(state, int) and self.io_type in (b'D', b'B', b'W'):
             state = state > 0
-        self._write([b'O', self.index, bytes([state])])
+        self._serial0.write_struct('<c2B', b'O', self.index, state)
