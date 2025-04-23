@@ -220,7 +220,7 @@ class ChunkedSerialReader(Protocol):
             print(struct.unpack('<I', self.get(4)))
 
 
-def to_bytes(data: Any) -> bytes:
+def to_bytes(data: Any) -> bytes:  # noqa: PLR0911
     """
     Convert data to bytestring.
 

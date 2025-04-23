@@ -243,47 +243,42 @@ class Bpod:
         self._hardware_config = HardwareConfiguration(*hardware_conf)
 
     def _configure_channels(self) -> None:
-        def collect_channels(description: bytes, channel_cls: type):
-            """
-            Generate a collection of Bpod channels.
+        type_dict = {
+            b'U': 'UART',
+            b'X': 'USB',
+            b'Z': 'USB_ext',
+            b'F': 'FlexIO',
+            b'S': 'SPI',
+            b'D': 'Digital',
+            b'B': 'BNC',
+            b'W': 'Wire',
+            b'V': 'Valve',
+            b'P': 'Port',
+        }
 
-            This method takes a channel description array (as returned by the Bpod), a
-            dictionary mapping keys to names, and a channel class. It generates named
-            tuple instances and sets them as attributes on the current Bpod instance.
-            """
+        logger.debug('Configuring I/O ports')
+        for description, channel_class in (
+            (self._hardware_config.input_description, Input),
+            (self._hardware_config.output_description, Output),
+        ):
             channels = []
             types = []
-            type_dict = {
-                b'U': 'UART',
-                b'X': 'USB',
-                b'Z': 'USB_ext',
-                b'F': 'FlexIO',
-                b'S': 'SPI',
-                b'D': 'Digital',
-                b'B': 'BNC',
-                b'W': 'Wire',
-                b'V': 'Valve',
-                b'P': 'Port',
-            }
-            cls_name = f'{channel_cls.__name__.lower()}s'
+            class_name = f'{channel_class.__name__.lower()}s'
 
             for idx in range(len(description)):
                 io_key = description[idx : idx + 1]
                 if bytes(io_key) in type_dict:
                     n = description[:idx].count(io_key) + 1
                     name = f'{type_dict[io_key]}{n}'
-                    channels.append(channel_cls(self, name, io_key, idx))
-                    types.append((name, channel_cls))
+                    channels.append(channel_class(self, name, io_key, idx))
+                    types.append((name, channel_class))
                 else:
-                    raise RuntimeError(f'Unknown {cls_name[:-1]} type: {io_key}')
+                    raise RuntimeError(f'Unknown {class_name[:-1]} type: {io_key}')
 
-            setattr(self, cls_name, NamedTuple(cls_name, types)._make(channels))
+            setattr(self, class_name, NamedTuple(class_name, types)._make(channels))
 
-        logger.debug('Configuring I/O ports')
-
-        collect_channels(self._hardware_config.input_description, Input)
-        collect_channels(self._hardware_config.output_description, Output)
-        self._enable_inputs()
+        # set the enabled state of the inputs
+        self._set_enable_inputs()
 
     def _detect_additional_serial_ports(self) -> None:
         """Detect additional USB-serial ports."""
@@ -349,7 +344,7 @@ class Bpod:
             self.serial0.reset_input_buffer()
         logger.debug(f'Handshake with Bpod on {self.port} successful')
 
-    def _enable_inputs(self) -> bool:
+    def _set_enable_inputs(self) -> bool:
         enable = [i.enabled for i in self.inputs]
         self.serial0.write_struct(f'<c{self._hardware_config.n_inputs}?', b'E', *enable)
         return self.serial0.read(1) == b'\x01'
@@ -455,7 +450,7 @@ class Input(Channel):
             The index of the channel.
         """
         super().__init__(bpod, name, io_type, index)
-        self._enable_inputs = bpod._enable_inputs
+        self._set_enable_inputs = bpod._set_enable_inputs
         self._enabled = True
 
     def read(self) -> bool:
@@ -495,7 +490,8 @@ class Input(Channel):
             True if the operation was success, False otherwise.
         """
         self._enabled = enabled
-        return self._enable_inputs()
+        success = self._set_enable_inputs()
+        return success
 
     @property
     def enabled(self) -> bool:
