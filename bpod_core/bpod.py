@@ -350,9 +350,8 @@ class Bpod:
         logger.debug(f'Handshake with Bpod on {self.port} successful')
 
     def _enable_inputs(self) -> bool:
-        n_inputs = len(self._hardware_config.input_description)
         enable = [i.enabled for i in self.inputs]
-        self.serial0.write_struct(f'<c{n_inputs}?', b'E', *enable)
+        self.serial0.write_struct(f'<c{self._hardware_config.n_inputs}?', b'E', *enable)
         return self.serial0.read(1) == b'\x01'
 
     @property
