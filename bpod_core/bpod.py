@@ -1,6 +1,7 @@
 """Module for interfacing with the Bpod Finite State Machine."""
 
 import logging
+import struct
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -263,20 +264,19 @@ class Bpod:
             (self._hardware_config.input_description, Input),
             (self._hardware_config.output_description, Output),
         ):
+            n_channels = len(description)
+            io_class = f'{channel_class.__name__.lower()}s'
             channels = []
             types = []
-            io_class = f'{channel_class.__name__.lower()}s'
 
             # loop over the description array and create channels
-            for idx in range(len(description)):
-                io_key = description[idx : idx + 1]
-                if bytes(io_key) in CHANNEL_TYPES:
-                    n = description[:idx].count(io_key) + 1
-                    name = f'{CHANNEL_TYPES[io_key]}{n}'
-                    channels.append(channel_class(self, name, io_key, idx))
-                    types.append((name, channel_class))
-                else:
+            for idx, io_key in enumerate(struct.unpack(f'<{n_channels}c', description)):
+                if io_key not in CHANNEL_TYPES:
                     raise RuntimeError(f'Unknown {io_class[:-1]} type: {io_key}')
+                n = description[:idx].count(io_key) + 1
+                name = f'{CHANNEL_TYPES[io_key]}{n}'
+                channels.append(channel_class(self, name, io_key, idx))
+                types.append((name, channel_class))
 
             # store channels to NamedTuple and set the latter as a class attribute
             named_tuple = NamedTuple(io_class, types)._make(channels)
@@ -469,7 +469,9 @@ class Channel(ABC):
 class Input(Channel):
     """Input channel class representing a digital input channel."""
 
-    def __init__(self, bpod: Bpod, name: str, io_type: bytes, index: int):
+    def __init__(
+        self, bpod: Bpod, name: str, io_type: bytes, index: int, enabled: bool = True
+    ):
         """
         Input channel class representing a digital input channel.
 
@@ -486,7 +488,7 @@ class Input(Channel):
         """
         super().__init__(bpod, name, io_type, index)
         self._set_enable_inputs = bpod._set_enable_inputs
-        self._enabled = True
+        self._enabled = enabled
 
     def read(self) -> bool:
         """
