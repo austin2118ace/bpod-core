@@ -20,9 +20,9 @@ MIN_BPOD_FW_VERSION = (23, 0)  # minimum supported firmware version (major, mino
 MIN_BPOD_HW_VERSION = 3  # minimum supported hardware version
 MAX_BPOD_HW_VERSION = 4  # maximum supported hardware version
 CHANNEL_TYPES = {
-    b'U': 'UART',
-    b'X': 'USB',
-    b'Z': 'USB_ext',
+    b'U': 'Serial',
+    b'X': 'SoftCode',
+    b'Z': 'SoftCodeApp',
     b'F': 'FlexIO',
     b'S': 'SPI',
     b'D': 'Digital',
@@ -351,6 +351,17 @@ class Bpod:
             self.serial0.reset_input_buffer()
         logger.debug(f'Handshake with Bpod on {self.port} successful')
 
+    def _test_psram(self) -> bool:
+        """
+        Test the Bpod's PSRAM.
+
+        Returns
+        -------
+        bool
+            True if the PSRAM test passed, False otherwise.
+        """
+        return self.serial0.query_struct(b'_', b'<?')[0]
+
     def _set_enable_inputs(self) -> bool:
         logger.debug('Setting enabled state of input channels')
         enable = [i.enabled for i in self.inputs]
@@ -389,11 +400,27 @@ class Bpod:
             self.serial0.write(b'Z')
             self.serial0.close()
 
+    def set_status_led(self, enabled: bool) -> bool:
+        """
+        Enable or disable the Bpod's status LED.
+
+        Parameters
+        ----------
+        enabled : bool
+            True to enable the status LED, False to disable.
+
+        Returns
+        -------
+        bool
+            True if the operation was successful, False otherwise.
+        """
+        self.serial0.write_struct('<c?', b':', enabled)
+        return self.serial0.read_struct('<?')[0]
+
     def update_modules(self):
         self.serial0.write(b'M')
-        print(f'{self.n_modules} modules')
         for module_index in range(self._hardware_config.input_description.count(b'U')):
-            connected = self.serial0.read(1) == b'\x01'
+            connected = self.serial0.read_struct('<?')[0]
             if not connected:
                 continue
             firmware_version, n = self.serial0.read_struct('<IB')
@@ -408,7 +435,7 @@ class Bpod:
                         for i_event_name in range(n_event_names):
                             n = self.serial0.read_struct('<B')[0]
                             event_names.append(self.serial0.read_struct(f'<{n}s'))
-                more_info = self.serial0.read(1) == b'\x01'
+                more_info = self.serial0.read_struct('<?')[0]
 
 
 class Channel(ABC):
@@ -470,7 +497,7 @@ class Input(Channel):
         bool
             True if the input channel is active, False otherwise.
         """
-        return self._serial0.verify([b'I', self.index], b'\x01')
+        return self._serial0.query_struct([b'I', self.index], '<?')[0]
 
     def override(self, state: bool) -> None:
         """
