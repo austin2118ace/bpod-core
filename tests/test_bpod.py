@@ -209,7 +209,8 @@ class TestGetHardwareConfiguration:
         bpod.version.firmware = (23, 0)
         Bpod._get_hardware_configuration(bpod)
         assert bpod._hardware_config.max_states == 256
-        assert bpod._hardware_config.timer_period == 100
+        assert bpod._hardware_config.cycle_period == 100
+        assert bpod._hardware_config.cycle_frequency == 1e6 // 100
         assert bpod._hardware_config.max_serial_events == 75
         assert bpod._hardware_config.max_bytes_per_serial_message == 5
         assert bpod._hardware_config.n_global_timers == 16
@@ -244,7 +245,8 @@ class TestGetHardwareConfiguration:
         bpod.version.firmware = (22, 0)
         Bpod._get_hardware_configuration(bpod)
         assert bpod._hardware_config.max_states == 256
-        assert bpod._hardware_config.timer_period == 100
+        assert bpod._hardware_config.cycle_period == 100
+        assert bpod._hardware_config.cycle_frequency == 10000
         assert bpod._hardware_config.max_serial_events == 75
         assert bpod._hardware_config.max_bytes_per_serial_message == 3
         assert bpod._hardware_config.n_global_timers == 16

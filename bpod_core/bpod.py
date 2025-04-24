@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from _typeshed import ReadableBuffer  # noqa: F401
 
 PROJECT_NAME = 'bpod-core'
-VIDS_BPOD = [0x16C0]  # vendor IDs of supported Bpod devices
+VENDOR_IDS_BPOD = [0x16C0]  # vendor IDs of supported Bpod devices
 MIN_BPOD_FW_VERSION = (23, 0)  # minimum supported firmware version (major, minor)
 MIN_BPOD_HW_VERSION = 3  # minimum supported hardware version
 MAX_BPOD_HW_VERSION = 4  # maximum supported hardware version
@@ -52,7 +52,7 @@ class HardwareConfiguration(NamedTuple):
 
     max_states: int
     """Maximum number of supported states in a single state machine description."""
-    timer_period: int
+    cycle_period: int
     """Period of the state machine's refresh cycle during a trial in microseconds."""
     max_serial_events: int
     """Maximum number of behavior events allocatable among connected modules."""
@@ -72,6 +72,11 @@ class HardwareConfiguration(NamedTuple):
     """Number of channels in the state machine's output channel description array."""
     output_description: bytes
     """Array indicating the state machine's onboard output channel types."""
+
+    @property
+    def cycle_frequency(self) -> int:
+        """Frequency of the state machine's refresh cycle during a trial in Hertz."""
+        return 1000000 // self.cycle_period
 
 
 class BpodError(Exception):
@@ -102,7 +107,7 @@ class Bpod:
         logger.info(f'bpod_core {bpod_core_version}')
 
         # identify Bpod by port or serial number
-        port, serial_number = self._identify_bpod(port, serial_number)
+        port, self._serial_number = self._identify_bpod(port, serial_number)
 
         # open primary serial port
         self.serial0 = ExtendedSerial()
@@ -126,7 +131,7 @@ class Bpod:
         logger.info(f'Connected to Bpod Finite State Machine {machine} on {self.port}')
         logger.info(
             f'Firmware Version {"{}.{}".format(*self.version.firmware)}, '
-            f'Serial Number {serial_number}, PCB Revision {self.version.pcb}'
+            f'Serial Number {self._serial_number}, PCB Revision {self.version.pcb}'
         )
 
     def __enter__(self):
@@ -184,7 +189,7 @@ class Bpod:
                 port_info = next(
                     p
                     for p in comports()
-                    if getattr(p, 'vid', None) in VIDS_BPOD
+                    if getattr(p, 'vid', None) in VENDOR_IDS_BPOD
                     and sends_discovery_byte(p.device)
                 )
             except StopIteration as e:
@@ -210,7 +215,7 @@ class Bpod:
             except (StopIteration, AttributeError) as e:
                 raise BpodError(f'Port not found: {port}') from e
 
-        if port_info.vid not in VIDS_BPOD:
+        if port_info.vid not in VENDOR_IDS_BPOD:
             raise BpodError('Device is not a supported Bpod')
         return port_info.device, port_info.serial_number
 
@@ -291,7 +296,11 @@ class Bpod:
 
         # First, assemble a list of candidate ports
         candidate_ports = [
-            p.device for p in comports() if p.vid in VIDS_BPOD and p.device != self.port
+            p.device
+            for p in comports()
+            if p.serial_number == self._serial_number
+            and p.vid in VENDOR_IDS_BPOD
+            and p.device != self.port
         ]
 
         # Exclude those devices from the list that are already sending a discovery byte
@@ -317,7 +326,7 @@ class Bpod:
             except SerialException:
                 pass
 
-        # State Machine 2+ uses a third USB-serial port
+        # State Machine 2+ uses a third USB-serial port for FlexIO
         if self.version.machine == 4:
             for port in candidate_ports:
                 try:
@@ -442,7 +451,7 @@ class Channel(ABC):
     """Abstract base class representing a channel on the Bpod device."""
 
     @abstractmethod
-    def __init__(self, bpod: Bpod, name: str, io_type: bytes, index: int):
+    def __init__(self, bpod: Bpod, name: str, io_key: bytes, index: int):
         """
         Abstract base class representing a channel on the Bpod device.
 
@@ -452,13 +461,13 @@ class Channel(ABC):
             The Bpod instance associated with the channel.
         name : str
             The name of the channel.
-        io_type : bytes
+        io_key : bytes
             The I/O type of the channel (e.g., b'B', b'V', b'P').
         index : int
             The index of the channel.
         """
         self.name = name
-        self.io_type = io_type
+        self.io_type = io_key
         self.index = index
         self._serial0 = bpod.serial0
 
@@ -469,9 +478,7 @@ class Channel(ABC):
 class Input(Channel):
     """Input channel class representing a digital input channel."""
 
-    def __init__(
-        self, bpod: Bpod, name: str, io_type: bytes, index: int, enabled: bool = True
-    ):
+    def __init__(self, bpod: Bpod, name: str, io_key: bytes, index: int):
         """
         Input channel class representing a digital input channel.
 
@@ -481,14 +488,14 @@ class Input(Channel):
             The Bpod instance associated with the channel.
         name : str
             The name of the channel.
-        io_type : bytes
+        io_key : bytes
             The I/O type of the channel (e.g., b'B', b'V', b'P').
         index : int
             The index of the channel.
         """
-        super().__init__(bpod, name, io_type, index)
+        super().__init__(bpod, name, io_key, index)
         self._set_enable_inputs = bpod._set_enable_inputs
-        self._enabled = enabled
+        self._enabled = io_key in (b'PBWF')  # Enable Port, BNC, Wire and FlexIO inputs
 
     def read(self) -> bool:
         """
@@ -558,7 +565,7 @@ class Input(Channel):
 class Output(Channel):
     """Output channel class representing a digital output channel."""
 
-    def __init__(self, bpod: Bpod, name: str, io_type: bytes, index: int):
+    def __init__(self, bpod: Bpod, name: str, io_key: bytes, index: int):
         """
         Output channel class representing a digital output channel.
 
@@ -568,12 +575,12 @@ class Output(Channel):
             The Bpod instance associated with the channel.
         name : str
             The name of the channel.
-        io_type : bytes
+        io_key : bytes
             The I/O type of the channel (e.g., b'B', b'V', b'P').
         index : int
             The index of the channel.
         """
-        super().__init__(bpod, name, io_type, index)
+        super().__init__(bpod, name, io_key, index)
 
     def override(self, state: bool | int) -> None:
         """
