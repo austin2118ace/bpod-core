@@ -4,7 +4,7 @@ from collections import OrderedDict
 from typing import Annotated
 
 from annotated_types import IsAscii
-from graphviz import Digraph
+from graphviz import Digraph  # type: ignore
 from pydantic import BaseModel, Field, validate_call
 
 StateMachineName = Annotated[
