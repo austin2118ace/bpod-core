@@ -13,7 +13,7 @@ classifiers = [
   "Topic :: Scientific/Engineering",
   "Typing :: Typed",
 ]
-dependencies = ["numpy", "pandas", "pydantic>=2.11", "pyserial>=3.5"]
+dependencies = ["numpy", "pandas", "pydantic>=2.11", "pyserial>=3.5", "annotated-types>=0.7.0", "graphviz>=0.20.3"]
 description = "Python package for interfacing with the Bpod finite state machine"
 dynamic = ["version"]
 license = { text = "MIT" }
