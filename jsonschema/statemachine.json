@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "State": {
+      "description": "Represents a state in the state machine.",
+      "properties": {
+        "name": {
+          "description": "The name of the state",
+          "minLength": 1,
+          "title": "State Name",
+          "type": "string"
+        },
+        "timer": {
+          "default": 0.0,
+          "description": "The state's timer in seconds",
+          "minimum": 0.0,
+          "title": "State Timer",
+          "type": "number"
+        },
+        "state_change_conditions": {
+          "additionalProperties": {
+            "description": "The name of the state",
+            "minLength": 1,
+            "type": "string"
+          },
+          "description": "The conditions for switching from the current state to others",
+          "title": "State Change Conditions",
+          "type": "object"
+        },
+        "output_actions": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "The actions to be executed during the state",
+          "title": "Output Actions",
+          "type": "object"
+        },
+        "comment": {
+          "default": "",
+          "description": "An optional comment describing the state.",
+          "title": "Comment",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "State",
+      "type": "object"
+    }
+  },
+  "description": "Represents a state machine with a collection of states.",
+  "properties": {
+    "name": {
+      "default": "State Machine",
+      "description": "The name of the state machine",
+      "minLength": 1,
+      "title": "State Machine Name",
+      "type": "string"
+    },
+    "states": {
+      "additionalProperties": {
+        "$ref": "#/$defs/State"
+      },
+      "propertyNames": {
+        "description": "The name of the state",
+        "minLength": 1
+      },
+      "title": "States",
+      "type": "object"
+    }
+  },
+  "title": "StateMachine",
+  "type": "object"
+}

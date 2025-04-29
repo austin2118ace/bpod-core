@@ -1,3 +1,5 @@
+"""Module defining classes and types for creating and managing state machines."""
+
 from collections import OrderedDict
 from typing import Annotated
 
@@ -5,75 +7,121 @@ from annotated_types import IsAscii
 from graphviz import Digraph
 from pydantic import BaseModel, Field, validate_call
 
-StateMachineName = Annotated[IsAscii[str], Field(min_length=1, default='State Machine')]
-StateName = Annotated[IsAscii[str], Field(min_length=1)]
-StateTimer = Annotated[float, Field(ge=0, allow_inf_nan=False, default=0.0)]
-StateChangeConditions = Annotated[dict[str, StateName], Field(default_factory=dict)]
-OutputActions = Annotated[dict[str, int], Field(default_factory=dict)]
+StateMachineName = Annotated[
+    IsAscii[str],
+    Field(
+        min_length=1,
+        default='State Machine',
+        title='State Machine Name',
+        description='The name of the state machine',
+    ),
+]
+StateName = Annotated[
+    IsAscii[str],
+    Field(
+        min_length=1,
+        title='State Name',
+        description='The name of the state',
+    ),
+]
+StateTimer = Annotated[
+    float,
+    Field(
+        ge=0.0,
+        allow_inf_nan=False,
+        default=0.0,
+        title='State Timer',
+        description="The state's timer in seconds",
+    ),
+]
+StateChangeConditions = Annotated[
+    dict[str, StateName],
+    Field(
+        default_factory=dict,
+        title='State Change Conditions',
+        description='The conditions for switching from the current state to others',
+    ),
+]
+OutputActions = Annotated[
+    dict[str, int],
+    Field(
+        default_factory=dict,
+        title='Output Actions',
+        description='The actions to be executed during the state',
+    ),
+]
+Comment = Annotated[
+    str,
+    Field(
+        default='',
+        title='Comment',
+        description='An optional comment describing the state.',
+    ),
+]
 
 
 class State(BaseModel):
-    """
-    Represents a state in the state machine.
-
-    Attributes
-    ----------
-    name : StateName
-        The name of the state.
-    timer : StateTimer, optional
-        The duration of the state in seconds. Defaults to 0.
-    state_change_conditions : StateChangeConditions, optional
-        A dictionary mapping conditions to target states for transitions. Defaults to an
-        empty dictionary.
-    output_actions : StateChangeConditions, optional
-        A dictionary of actions to be executed during the state. Defaults to an empty
-        dictionary.
-    comment : str, optional
-        An optional comment describing the state.
-    """
+    """Represents a state in the state machine."""
 
     name: StateName
+    """The name of the state."""
     timer: StateTimer = StateTimer()
+    """The state's timer in seconds."""
     state_change_conditions: StateChangeConditions = StateChangeConditions()
-    output_actions: StateChangeConditions = StateChangeConditions()
-    comment: str = ''
-
-    class Config:  # noqa: D106
-        validate_assignment = True
+    """A dictionary mapping conditions to target states for transitions."""
+    output_actions: OutputActions = OutputActions()
+    """A dictionary of actions to be executed during the state."""
+    comment: Comment = Comment()
+    """An optional comment describing the state."""
+    model_config = {'validate_assignment': True}
+    """Configuration for the `State` model."""
 
 
 class StateMachine(BaseModel):
-    """
-    Represents a state machine with a collection of states.
-
-    Attributes
-    ----------
-    name : StateMachineName
-        The name of the state machine.
-    states : OrderedDict[StateName, State]
-        An ordered dictionary of states in the state machine.
-    """
+    """Represents a state machine with a collection of states."""
 
     name: StateMachineName
+    """The name of the state machine."""
     states: OrderedDict[StateName, State] = Field(default_factory=OrderedDict)
-
-    class Config:  # noqa: D106
-        validate_assignment = True
+    """An ordered dictionary of states in the state machine."""
+    model_config = {'validate_assignment': True}
+    """Configuration for the `StateMachine` model."""
 
     @validate_call
     def add_state(
         self,
         name: StateName,
         timer: StateTimer,
-        state_change_conditions: StateChangeConditions = None,
-        output_actions: OutputActions = None,
-        comment: str = '',
+        state_change_conditions: StateChangeConditions,
+        output_actions: OutputActions,
+        comment: Comment | None = None,
     ) -> None:
+        """
+        Adds a new state to the state machine.
+
+        Parameters
+        ----------
+        name : str
+            The name of the state to be added.
+        timer : float, optional
+            The duration of the state's timer in seconds. Default to 0.
+        state_change_conditions : dict, optional
+            A dictionary mapping conditions to target states for transitions.
+            Defaults to an empty dictionary.
+        output_actions : dict, optional
+            A dictionary of actions to be executed during the state.
+            Defaults to an empty dictionary.
+        comment : Comment, optional
+            An optional comment describing the state.
+
+        Raises
+        ------
+        ValueError
+            If a state with the given name already exists in the state machine.
+        """
         if name in self.states:
             raise ValueError(f"A state named '{name}' is already registered")
-        if state_change_conditions is None:
-            state_change_conditions = StateChangeConditions()
-        self.states[name] = State.construct(
+        self.states[name] = State.model_construct(
             name=name,
             timer=timer,
             state_change_conditions=state_change_conditions,
@@ -129,7 +177,7 @@ class StateMachine(BaseModel):
             comment = (
                 f'<TR><TD ALIGN="LEFT" COLSPAN="2" BGCOLOR="LIGHTBLUE">'
                 f'<I>{state.comment}</I></TD></TR>'
-                if len(state.comment) > 0
+                if state.comment is not None and len(state.comment) > 0
                 else ''
             )
             actions = ''.join(
