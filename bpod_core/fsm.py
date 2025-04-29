@@ -1,14 +1,14 @@
 """Module defining classes and types for creating and managing state machines."""
 
+import re
 from collections import OrderedDict
 from typing import Annotated
 
-from annotated_types import IsAscii
 from graphviz import Digraph  # type: ignore
 from pydantic import BaseModel, Field, validate_call
 
 StateMachineName = Annotated[
-    IsAscii[str],
+    str,
     Field(
         min_length=1,
         default='State Machine',
@@ -17,11 +17,12 @@ StateMachineName = Annotated[
     ),
 ]
 StateName = Annotated[
-    IsAscii[str],
+    str,
     Field(
         min_length=1,
         title='State Name',
         description='The name of the state',
+        pattern=re.compile(r'^(?!exit$).*$'),
     ),
 ]
 StateTimer = Annotated[
@@ -34,26 +35,42 @@ StateTimer = Annotated[
         description="The state's timer in seconds",
     ),
 ]
+TargetStateName = Annotated[
+    str,
+    Field(
+        min_length=1,
+        title='Target State Name',
+        description='The name of the target state',
+    ),
+]
 StateChangeConditions = Annotated[
-    dict[str, StateName],
+    dict[str, TargetStateName],
     Field(
         default_factory=dict,
         title='State Change Conditions',
         description='The conditions for switching from the current state to others',
     ),
 ]
+OutputActionValue = Annotated[
+    int,
+    Field(
+        ge=0,
+        le=255,
+        title='Output Action Value',
+        description='The integer value of the output action',
+    ),
+]
 OutputActions = Annotated[
-    dict[str, int],
+    dict[str, OutputActionValue],
     Field(
         default_factory=dict,
         title='Output Actions',
         description='The actions to be executed during the state',
     ),
 ]
-Comment = Annotated[
+StateComment = Annotated[
     str,
     Field(
-        default='',
         title='Comment',
         description='An optional comment describing the state.',
     ),
@@ -71,7 +88,7 @@ class State(BaseModel):
     """A dictionary mapping conditions to target states for transitions."""
     output_actions: OutputActions = OutputActions()
     """A dictionary of actions to be executed during the state."""
-    comment: Comment = Comment()
+    comment: StateComment = StateComment()
     """An optional comment describing the state."""
     model_config = {'validate_assignment': True}
     """Configuration for the `State` model."""
@@ -94,7 +111,7 @@ class StateMachine(BaseModel):
         timer: StateTimer,
         state_change_conditions: StateChangeConditions,
         output_actions: OutputActions,
-        comment: Comment | None = None,
+        comment: StateComment | None = None,
     ) -> None:
         """
         Adds a new state to the state machine.

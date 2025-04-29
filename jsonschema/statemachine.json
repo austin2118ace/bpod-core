@@ -6,6 +6,7 @@
         "name": {
           "description": "The name of the state",
           "minLength": 1,
+          "pattern": "^(?!exit$).*$",
           "title": "State Name",
           "type": "string"
         },
@@ -18,7 +19,7 @@
         },
         "state_change_conditions": {
           "additionalProperties": {
-            "description": "The name of the state",
+            "description": "The name of the target state",
             "minLength": 1,
             "type": "string"
           },
@@ -28,6 +29,9 @@
         },
         "output_actions": {
           "additionalProperties": {
+            "description": "The integer value of the output action",
+            "maximum": 255,
+            "minimum": 0,
             "type": "integer"
           },
           "description": "The actions to be executed during the state",
@@ -58,8 +62,10 @@
       "type": "string"
     },
     "states": {
-      "additionalProperties": {
-        "$ref": "#/$defs/State"
+      "patternProperties": {
+        "^(?!exit$).*$": {
+          "$ref": "#/$defs/State"
+        }
       },
       "propertyNames": {
         "description": "The name of the state",

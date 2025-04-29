@@ -1,9 +1,10 @@
+import json
 import os
 import sys
 from datetime import date
 
 sys.path.insert(0, os.path.abspath('../..'))
-from bpod_core import __version__
+from bpod_core import __version__, fsm
 
 # Configuration file for the Sphinx documentation builder.
 #
@@ -21,6 +22,10 @@ version = '.'.join(__version__.split('.')[:3])
 rst_prolog = f"""
 .. |version_code| replace:: ``{version}``
 """
+
+# -- dump json schema --------------------------------------------------------
+with open('../../jsonschema/statemachine.json', 'w') as f:
+    json.dump(fsm.StateMachine.model_json_schema(), f, indent=2)
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
