@@ -1,4 +1,4 @@
 JSON Schema
 ===========
 
-.. jsonschema:: ../../jsonschema/statemachine.json
+.. jsonschema:: ../../schema/statemachine.json

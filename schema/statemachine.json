@@ -1,15 +1,9 @@
 {
   "$defs": {
     "State": {
+      "additionalProperties": false,
       "description": "Represents a state in the state machine.",
       "properties": {
-        "name": {
-          "description": "The name of the state",
-          "minLength": 1,
-          "pattern": "^(?!exit$).*$",
-          "title": "State Name",
-          "type": "string"
-        },
         "timer": {
           "default": 0.0,
           "description": "The state's timer in seconds",
@@ -45,13 +39,11 @@
           "type": "string"
         }
       },
-      "required": [
-        "name"
-      ],
       "title": "State",
       "type": "object"
     }
   },
+  "additionalProperties": false,
   "description": "Represents a state machine with a collection of states.",
   "properties": {
     "name": {
@@ -62,14 +54,16 @@
       "type": "string"
     },
     "states": {
-      "patternProperties": {
-        "^(?!exit$).*$": {
-          "$ref": "#/$defs/State"
-        }
+      "additionalProperties": {
+        "$ref": "#/$defs/State"
       },
+      "description": "A collection of states",
       "propertyNames": {
-        "description": "The name of the state",
-        "minLength": 1
+        "minLength": 1,
+        "not": {
+          "const": "exit"
+        },
+        "type": "string"
       },
       "title": "States",
       "type": "object"

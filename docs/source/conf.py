@@ -24,7 +24,7 @@ rst_prolog = f"""
 """
 
 # -- dump json schema --------------------------------------------------------
-with open('../../jsonschema/statemachine.json', 'w') as f:
+with open('../../schema/statemachine.json', 'w') as f:
     json.dump(fsm.StateMachine.model_json_schema(), f, indent=2)
 
 # -- General configuration ---------------------------------------------------

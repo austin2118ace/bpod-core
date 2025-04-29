@@ -1,28 +1,18 @@
 """Module defining classes and types for creating and managing state machines."""
 
-import re
 from collections import OrderedDict
 from typing import Annotated
 
 from graphviz import Digraph  # type: ignore
 from pydantic import BaseModel, Field, validate_call
 
-StateMachineName = Annotated[
-    str,
-    Field(
-        min_length=1,
-        default='State Machine',
-        title='State Machine Name',
-        description='The name of the state machine',
-    ),
-]
 StateName = Annotated[
     str,
     Field(
         min_length=1,
         title='State Name',
         description='The name of the state',
-        pattern=re.compile(r'^(?!exit$).*$'),
+        # pattern=re.compile(r'^(?!exit$).*$'),
     ),
 ]
 StateTimer = Annotated[
@@ -35,16 +25,16 @@ StateTimer = Annotated[
         description="The state's timer in seconds",
     ),
 ]
-TargetStateName = Annotated[
+TargetState = Annotated[
     str,
     Field(
         min_length=1,
-        title='Target State Name',
+        title='Target State',
         description='The name of the target state',
     ),
 ]
 StateChangeConditions = Annotated[
-    dict[str, TargetStateName],
+    dict[str, TargetState],
     Field(
         default_factory=dict,
         title='State Change Conditions',
@@ -68,7 +58,7 @@ OutputActions = Annotated[
         description='The actions to be executed during the state',
     ),
 ]
-StateComment = Annotated[
+Comment = Annotated[
     str,
     Field(
         title='Comment',
@@ -80,28 +70,60 @@ StateComment = Annotated[
 class State(BaseModel):
     """Represents a state in the state machine."""
 
-    name: StateName
-    """The name of the state."""
-    timer: StateTimer = StateTimer()
+    timer: float = Field(
+        ge=0.0,
+        allow_inf_nan=False,
+        default=0.0,
+        title='State Timer',
+        description="The state's timer in seconds",
+    )
     """The state's timer in seconds."""
+
     state_change_conditions: StateChangeConditions = StateChangeConditions()
     """A dictionary mapping conditions to target states for transitions."""
+
     output_actions: OutputActions = OutputActions()
     """A dictionary of actions to be executed during the state."""
-    comment: StateComment = StateComment()
+
+    comment: Comment = Comment()
     """An optional comment describing the state."""
-    model_config = {'validate_assignment': True}
+
+    model_config = {
+        'validate_assignment': True,
+        'json_schema_extra': {'additionalProperties': False},
+    }
     """Configuration for the `State` model."""
 
 
 class StateMachine(BaseModel):
     """Represents a state machine with a collection of states."""
 
-    name: StateMachineName
+    name: str = Field(
+        min_length=1,
+        default='State Machine',
+        title='State Machine Name',
+        description='The name of the state machine',
+    )
     """The name of the state machine."""
-    states: OrderedDict[StateName, State] = Field(default_factory=OrderedDict)
+
+    states: OrderedDict[StateName, State] = Field(
+        description='A collection of states',
+        title='States',
+        default_factory=OrderedDict,
+        json_schema_extra={
+            'propertyNames': {
+                'minLength': 1,
+                'type': 'string',
+                'not': {'const': 'exit'},
+            }
+        },
+    )
     """An ordered dictionary of states in the state machine."""
-    model_config = {'validate_assignment': True}
+
+    model_config = {
+        'validate_assignment': True,
+        'json_schema_extra': {'additionalProperties': False},
+    }
     """Configuration for the `StateMachine` model."""
 
     @validate_call
@@ -111,7 +133,7 @@ class StateMachine(BaseModel):
         timer: StateTimer,
         state_change_conditions: StateChangeConditions,
         output_actions: OutputActions,
-        comment: StateComment | None = None,
+        comment: Comment | None = None,
     ) -> None:
         """
         Adds a new state to the state machine.
@@ -139,7 +161,6 @@ class StateMachine(BaseModel):
         if name in self.states:
             raise ValueError(f"A state named '{name}' is already registered")
         self.states[name] = State.model_construct(
-            name=name,
             timer=timer,
             state_change_conditions=state_change_conditions,
             output_actions=output_actions,
@@ -189,7 +210,7 @@ class StateMachine(BaseModel):
             digraph.node(name='exit', label='<<b>exit</b>>', shape='plain')
 
         # Add nodes for each state
-        for state in self.states.values():
+        for state_name, state in self.states.items():
             # Create table rows for the state's comment and output actions
             comment = (
                 f'<TR><TD ALIGN="LEFT" COLSPAN="2" BGCOLOR="LIGHTBLUE">'
@@ -205,16 +226,16 @@ class StateMachine(BaseModel):
             # Create label for the state node with its name, timer, comment, and actions
             label = (
                 f'<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" ALIGN="LEFT">'
-                f'<TR><TD BGCOLOR="LIGHTBLUE" ALIGN="LEFT"><B>{state.name}  </B></TD>'
+                f'<TR><TD BGCOLOR="LIGHTBLUE" ALIGN="LEFT"><B>{state_name}  </B></TD>'
                 f'<TD BGCOLOR="LIGHTBLUE" ALIGN="RIGHT">{state.timer:g} s</TD></TR>'
                 f'{comment}{actions}</TABLE>>'
             )
 
             # Add the state node to the Digraph
-            digraph.node(name=state.name, label=label, shape='none')
+            digraph.node(name=state_name, label=label, shape='none')
 
             # Add edges for state transitions based on conditions
             for condition, target_state in state.state_change_conditions.items():
-                digraph.edge(state.name, target_state, label=condition)
+                digraph.edge(state_name, target_state, label=condition)
 
         return digraph
