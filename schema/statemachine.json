@@ -54,10 +54,12 @@
       "type": "string"
     },
     "states": {
-      "additionalProperties": {
-        "$ref": "#/$defs/State"
-      },
       "description": "A collection of states",
+      "patternProperties": {
+        "^(?!exit$).*$": {
+          "$ref": "#/$defs/State"
+        }
+      },
       "propertyNames": {
         "minLength": 1,
         "not": {

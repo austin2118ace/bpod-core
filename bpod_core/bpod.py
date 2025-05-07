@@ -78,6 +78,11 @@ class HardwareConfiguration(NamedTuple):
         """Frequency of the state machine's refresh cycle during a trial in Hertz."""
         return 1000000 // self.cycle_period
 
+    @property
+    def n_modules(self) -> int:
+        """Number of modules supported by the state machine."""
+        return self.input_description.count(b'U')
+
 
 class BpodError(Exception):
     """
@@ -92,10 +97,10 @@ class Bpod:
     """Bpod class for interfacing with the Bpod Finite State Machine."""
 
     _version: VersionInfo
-    _hardware_config: HardwareConfiguration
+    _hardware: HardwareConfiguration
     serial0: ExtendedSerial
     """Primary serial device for communication with the Bpod."""
-    serial1: ExtendedSerial
+    serial1: ExtendedSerial | None = None
     """Secondary serial device for communication with the Bpod."""
     serial2: ExtendedSerial | None = None
     """Tertiary serial device for communication with the Bpod - used by Bpod 2+ only."""
@@ -145,9 +150,41 @@ class Bpod:
     def __del__(self):
         self.close()
 
-    @staticmethod
+    def _sends_discovery_byte(
+        self,
+        port: str,
+        byte: bytes = b'\xde',
+        timeout: float = 0.11,
+        trigger: bytes | None = None,
+    ) -> bool:
+        r"""Check if the device on the given port sends a discovery byte.
+
+        Parameters
+        ----------
+        port : str
+            The name of the serial port to check (e.g., '/dev/ttyUSB0' or 'COM3').
+        byte : bytes, optional
+            The discovery byte to expect from the device. Defaults to b'\\xde'.
+        timeout : float, optional
+            Timeout period (in seconds) for the serial read operation. Defaults to 0.11.
+        trigger : bytes, optional
+            An optional command to send on serial0 before reading from the given device.
+
+        Returns
+        -------
+        bool
+            Whether the given device responded with the expected discovery byte or not.
+        """
+        try:
+            with ExtendedSerial(port, timeout=timeout) as ser:
+                if trigger is not None and getattr(self, 'serial0', None) is not None:
+                    self.serial0.write(trigger)
+                return ser.read(1) == byte
+        except SerialException:
+            return False
+
     def _identify_bpod(
-        port: str | None = None, serial_number: str | None = None
+        self, port: str | None = None, serial_number: str | None = None
     ) -> tuple[str, str | None]:
         """
         Try to identify a supported Bpod based on port or serial number.
@@ -174,15 +211,6 @@ class Bpod:
         BpodError
             If no Bpod is found or the indicated device is not supported.
         """
-
-        def sends_discovery_byte(port: str) -> bool:
-            """Check if the device on the given port sends a discovery byte."""
-            try:
-                with ExtendedSerial(port, timeout=0.15) as ser:
-                    return ser.read(1) == bytes([222])
-            except SerialException:
-                return False
-
         # If no port or serial number provided, try to automagically find an idle Bpod
         if port is None and serial_number is None:
             try:
@@ -190,7 +218,7 @@ class Bpod:
                     p
                     for p in comports()
                     if getattr(p, 'vid', None) in VENDOR_IDS_BPOD
-                    and sends_discovery_byte(p.device)
+                    and self._sends_discovery_byte(p.device)
                 )
             except StopIteration as e:
                 raise BpodError('No available Bpod found') from e
@@ -203,7 +231,7 @@ class Bpod:
                     p
                     for p in comports()
                     if p.serial_number == serial_number
-                    and sends_discovery_byte(p.device)
+                    and self._sends_discovery_byte(p.device)
                 )
             except (StopIteration, AttributeError) as e:
                 raise BpodError(f'No device with serial number {serial_number}') from e
@@ -252,7 +280,7 @@ class Bpod:
 
     def _get_hardware_configuration(self) -> None:
         """Retrieve the Bpod's onboard hardware configuration."""
-        logger.debug("Retrieving the Bpod's onboard hardware configuration")
+        logger.debug('Retrieving onboard hardware configuration')
         if self.version.firmware > (22, 0):
             hardware_conf = list(self.serial0.query_struct(b'H', '<2H6B'))
         else:
@@ -260,14 +288,14 @@ class Bpod:
             hardware_conf.insert(-4, 3)  # max bytes per serial msg always = 3
         hardware_conf.extend(self.serial0.read_struct(f'<{hardware_conf[-1]}s1B'))
         hardware_conf.extend(self.serial0.read_struct(f'<{hardware_conf[-1]}s'))
-        self._hardware_config = HardwareConfiguration(*hardware_conf)
+        self._hardware = HardwareConfiguration(*hardware_conf)
 
     def _configure_io(self) -> None:
         """Configure the input and output channels of the Bpod."""
         logger.debug('Configuring I/O')
         for description, channel_class in (
-            (self._hardware_config.input_description, Input),
-            (self._hardware_config.output_description, Output),
+            (self._hardware.input_description, Input),
+            (self._hardware.output_description, Output),
         ):
             n_channels = len(description)
             io_class = f'{channel_class.__name__.lower()}s'
@@ -298,47 +326,38 @@ class Bpod:
         candidate_ports = [
             p.device
             for p in comports()
-            if p.serial_number == self._serial_number
-            and p.vid in VENDOR_IDS_BPOD
-            and p.device != self.port
+            if p.serial_number == self._serial_number and p.device != self.port
         ]
 
         # Exclude those devices from the list that are already sending a discovery byte
-        for port in candidate_ports:
-            try:
-                with ExtendedSerial(port, timeout=0.15) as ser:
-                    if ser.read(1) == bytes([222]):
-                        candidate_ports.remove(port)
-            except SerialException:
-                pass
+        # NB: this should not be necessary, as we already filter for devices with
+        #     identical USB serial number.
+        # for port in candidate_ports:
+        #     if self._sends_discovery_byte(port):
+        #         candidate_ports.remove(port)
 
-        # Find second USB-serial port
-        for port in candidate_ports:
-            try:
-                with ExtendedSerial(port, timeout=0.15) as ser:
-                    self.serial0.write(b'{')
-                    if ser.read(1) == bytes([222]):
-                        ser.reset_input_buffer()
-                        ser.timeout = None
-                        self.serial1 = ser
-                        candidate_ports.remove(port)
-                        break
-            except SerialException:
-                pass
+        # Find secondary USB-serial port
+        if self._version.firmware >= (23, 0):
+            for port in candidate_ports:
+                if self._sends_discovery_byte(port, bytes([222]), trigger=b'{'):
+                    self.serial1 = ExtendedSerial()
+                    self.serial1.port = port
+                    candidate_ports.remove(port)
+                    logger.debug(f'Detected secondary USB-serial port: {port}')
+                    break
+            if self.serial2 is None:
+                raise BpodError('Could not detect secondary serial port')
 
         # State Machine 2+ uses a third USB-serial port for FlexIO
         if self.version.machine == 4:
             for port in candidate_ports:
-                try:
-                    with ExtendedSerial(port, timeout=0.15) as ser:
-                        self.serial0.write(b'}')
-                        if ser.read(1) == bytes([223]):
-                            ser.reset_input_buffer()
-                            ser.timeout = None
-                            self.serial2 = ser
-                            break
-                except SerialException:
-                    pass
+                if self._sends_discovery_byte(port, bytes([223]), trigger=b'}'):
+                    self.serial2 = ExtendedSerial()
+                    self.serial2.port = port
+                    logger.debug(f'Detected tertiary USB-serial port: {port}')
+                    break
+            if self.serial2 is None:
+                raise BpodError('Could not detect tertiary serial port')
 
     def _handshake(self):
         """
@@ -369,12 +388,12 @@ class Bpod:
         bool
             True if the PSRAM test passed, False otherwise.
         """
-        return self.serial0.query_struct(b'_', b'<?')[0]
+        return self.serial0.verify(b'_')
 
     def _set_enable_inputs(self) -> bool:
-        logger.debug('Setting enabled state of input channels')
+        logger.debug('Updating enabled state of input channels')
         enable = [i.enabled for i in self.inputs]
-        self.serial0.write_struct(f'<c{self._hardware_config.n_inputs}?', b'E', *enable)
+        self.serial0.write_struct(f'<c{self._hardware.n_inputs}?', b'E', *enable)
         return self.serial0.read(1) == b'\x01'
 
     @property
@@ -424,27 +443,29 @@ class Bpod:
             True if the operation was successful, False otherwise.
         """
         self.serial0.write_struct('<c?', b':', enabled)
-        return self.serial0.read_struct('<?')[0]
+        return self.serial0.verify(b'_')
 
     def update_modules(self):
         self.serial0.write(b'M')
-        for module_index in range(self._hardware_config.input_description.count(b'U')):
-            connected = self.serial0.read_struct('<?')[0]
-            if not connected:
-                continue
-            firmware_version, n = self.serial0.read_struct('<IB')
-            module_name, more_info = self.serial0.read_struct(f'<{n}s?')
-            while more_info:
-                match self.serial0.read(1):
-                    case b'#':
-                        n_serial_events = self.serial0.read_struct('<B')[0]
-                    case b'E':
-                        n_event_names = self.serial0.read(0)
-                        event_names = []
-                        for i_event_name in range(n_event_names):
-                            n = self.serial0.read_struct('<B')[0]
-                            event_names.append(self.serial0.read_struct(f'<{n}s'))
-                more_info = self.serial0.read_struct('<?')[0]
+        modules = []
+        for idx in range(self._hardware.n_modules):
+            is_connected = self.serial0.read_struct('<?')[0]
+            if not is_connected:
+                module_name = f'{CHANNEL_TYPES[b"U"]}{idx + 1}'
+            else:
+                firmware_version, n = self.serial0.read_struct('<IB')
+                module_name, more_info = self.serial0.read_struct(f'<{n}s?')
+                while more_info:
+                    match self.serial0.read(1):
+                        case b'#':
+                            n_serial_events = self.serial0.read_struct('<B')[0]
+                        case b'E':
+                            n_event_names = self.serial0.read(0)
+                            event_names = []
+                            for i_event_name in range(n_event_names):
+                                n = self.serial0.read_struct('<B')[0]
+                                event_names.append(self.serial0.read_struct(f'<{n}s'))
+                    more_info = self.serial0.read_struct('<?')[0]
 
 
 class Channel(ABC):
@@ -506,7 +527,7 @@ class Input(Channel):
         bool
             True if the input channel is active, False otherwise.
         """
-        return self._serial0.query_struct([b'I', self.index], '<?')[0]
+        return self._serial0.verify([b'I', self.index])
 
     def override(self, state: bool) -> None:
         """
@@ -595,3 +616,22 @@ class Output(Channel):
         if isinstance(state, int) and self.io_type in (b'D', b'B', b'W'):
             state = state > 0
         self._serial0.write_struct('<c2B', b'O', self.index, state)
+
+
+class Module:
+    """Base class for Bpod modules."""
+
+    def __init__(
+        self,
+        bpod: Bpod,
+        index: int,
+        name: str,
+        n_events: int,
+        event_names: list[str] | None = None,
+        firmware_version: int | None = None,
+        connected: bool = False,
+    ):
+        self._bpod = bpod
+        self._index = index
+        self._name = name
+        self._n_events = n_events

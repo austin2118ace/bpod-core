@@ -134,8 +134,8 @@ class ExtendedSerial(Serial):
         self.write(query)
         return self.read_struct(format_string)
 
-    def verify(self, query, expected_response: bytes) -> bool:
-        """
+    def verify(self, query, expected_response: bytes = b'\x01') -> bool:
+        r"""
         Verify the response of the serial port.
 
         This method sends a query to the serial port and checks if the response
@@ -145,8 +145,8 @@ class ExtendedSerial(Serial):
         ----------
         query : any
             The query to be sent to the serial port.
-        expected_response : bytes
-            The expected response from the serial port.
+        expected_response : bytes, optional
+            The expected response from the serial port. Default: b'\x01'.
 
         Returns
         -------

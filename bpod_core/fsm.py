@@ -1,5 +1,6 @@
 """Module defining classes and types for creating and managing state machines."""
 
+import re
 from collections import OrderedDict
 from typing import Annotated
 
@@ -12,7 +13,7 @@ StateName = Annotated[
         min_length=1,
         title='State Name',
         description='The name of the state',
-        # pattern=re.compile(r'^(?!exit$).*$'),
+        pattern=re.compile(r'^(?!exit$).*$'),
     ),
 ]
 StateTimer = Annotated[
