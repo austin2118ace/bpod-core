@@ -115,7 +115,7 @@ minversion = "6.0"
 testpaths = ["tests/"]
 
 [tool.tox]
-env_list = ["typing", "clean", "py310", "py311", "py312", "py313", "py314"]
+env_list = ["typing", "clean", "py310", "py311", "py312", "py313"]
 
 [tool.tox.env_run_base]
 description = "Run test under {base_python}"
