@@ -443,7 +443,7 @@ class Bpod:
             True if the operation was successful, False otherwise.
         """
         self.serial0.write_struct('<c?', b':', enabled)
-        return self.serial0.verify(b'_')
+        return self.serial0.verify(b'')
 
     def update_modules(self):
         pass
