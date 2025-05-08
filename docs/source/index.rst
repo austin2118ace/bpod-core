@@ -7,6 +7,7 @@
 
    developer_guide
    api
+   schema
    changelog
 
 .. toctree::

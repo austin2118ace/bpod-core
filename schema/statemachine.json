@@ -1,0 +1,76 @@
+{
+  "$defs": {
+    "State": {
+      "additionalProperties": false,
+      "description": "Represents a state in the state machine.",
+      "properties": {
+        "timer": {
+          "default": 0.0,
+          "description": "The state's timer in seconds",
+          "minimum": 0.0,
+          "title": "State Timer",
+          "type": "number"
+        },
+        "state_change_conditions": {
+          "additionalProperties": {
+            "description": "The name of the target state",
+            "minLength": 1,
+            "type": "string"
+          },
+          "description": "The conditions for switching from the current state to others",
+          "title": "State Change Conditions",
+          "type": "object"
+        },
+        "output_actions": {
+          "additionalProperties": {
+            "description": "The integer value of the output action",
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": "The actions to be executed during the state",
+          "title": "Output Actions",
+          "type": "object"
+        },
+        "comment": {
+          "default": "",
+          "description": "An optional comment describing the state.",
+          "title": "Comment",
+          "type": "string"
+        }
+      },
+      "title": "State",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Represents a state machine with a collection of states.",
+  "properties": {
+    "name": {
+      "default": "State Machine",
+      "description": "The name of the state machine",
+      "minLength": 1,
+      "title": "State Machine Name",
+      "type": "string"
+    },
+    "states": {
+      "description": "A collection of states",
+      "patternProperties": {
+        "^(?!exit$).*$": {
+          "$ref": "#/$defs/State"
+        }
+      },
+      "propertyNames": {
+        "minLength": 1,
+        "not": {
+          "const": "exit"
+        },
+        "type": "string"
+      },
+      "title": "States",
+      "type": "object"
+    }
+  },
+  "title": "StateMachine",
+  "type": "object"
+}

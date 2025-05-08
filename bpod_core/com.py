@@ -1,18 +1,19 @@
-import ctypes
+"""Module providing extended serial communication functionality."""
+
 import logging
 import struct
 from collections.abc import Iterable, Sequence
 from typing import Any
 
 import numpy as np
-import serial
+from serial import Serial
 from serial.serialutil import to_bytes as serial_to_bytes  # type: ignore[attr-defined]
 from serial.threaded import Protocol
 
 logger = logging.getLogger(__name__)
 
 
-class ExtendedSerial(serial.Serial):
+class ExtendedSerial(Serial):
     """Enhances :class:`serial.Serial` with additional functionality."""
 
     def write(self, data: Any) -> int | None:
@@ -34,7 +35,7 @@ class ExtendedSerial(serial.Serial):
         """
         return super().write(to_bytes(data))
 
-    def write_struct(self, data: Sequence[Any], format_string: str) -> int | None:
+    def write_struct(self, format_string: str, *data: Any) -> int | None:
         """
         Write structured data to the serial port.
 
@@ -43,14 +44,13 @@ class ExtendedSerial(serial.Serial):
 
         Parameters
         ----------
-        data : Sequence[Any]
-            A sequence of data to be packed and written, corresponding to the format
-            specifiers in `format_string`.
-
         format_string : str
             A format string that specifies the layout of the data. It should be
             compatible with the `struct` module's format specifications.
             See https://docs.python.org/3/library/struct.html#format-characters
+        *data : Any
+            Variable-length arguments representing the data to be packed and written,
+            corresponding to the format specifiers in `format_string`.
 
         Returns
         -------
@@ -58,9 +58,7 @@ class ExtendedSerial(serial.Serial):
             The number of bytes written to the serial port, or None if the write
             operation fails.
         """
-        size = struct.calcsize(format_string)
-        buffer = ctypes.create_string_buffer(size)
-        struct.pack_into(format_string, buffer, 0, *data)
+        buffer = struct.pack(format_string, *data)
         return super().write(buffer)
 
     def read_struct(self, format_string: str) -> tuple[Any, ...]:
@@ -136,8 +134,8 @@ class ExtendedSerial(serial.Serial):
         self.write(query)
         return self.read_struct(format_string)
 
-    def verify(self, query, expected_response: bytes) -> bool:
-        """
+    def verify(self, query, expected_response: bytes = b'\x01') -> bool:
+        r"""
         Verify the response of the serial port.
 
         This method sends a query to the serial port and checks if the response
@@ -147,8 +145,8 @@ class ExtendedSerial(serial.Serial):
         ----------
         query : any
             The query to be sent to the serial port.
-        expected_response : bytes
-            The expected response from the serial port.
+        expected_response : bytes, optional
+            The expected response from the serial port. Default: b'\x01'.
 
         Returns
         -------
@@ -222,7 +220,7 @@ class ChunkedSerialReader(Protocol):
             print(struct.unpack('<I', self.get(4)))
 
 
-def to_bytes(data: Any) -> bytes:
+def to_bytes(data: Any) -> bytes:  # noqa: PLR0911
     """
     Convert data to bytestring.
 
@@ -242,6 +240,10 @@ def to_bytes(data: Any) -> bytes:
     match data:
         case bytes():
             return data
+        case bytearray():
+            return bytes(data)
+        case memoryview():
+            return data.tobytes()
         case int():
             return bytes([data])
         case np.ndarray() | np.generic():

@@ -260,3 +260,7 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# graphviz
+*.gv.*
+*.gv

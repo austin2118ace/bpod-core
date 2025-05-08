@@ -1,7 +1,7 @@
 bpod-core
 =========
 
-**bpod-core** is a Python package for communicating with the *Bpod* device from [*Sanworks*](https://sanworks.io/).
+**bpod-core** is a Python package for communicating with the *Bpod Finite State Machine* from [*Sanworks*](https://sanworks.io/).
 
 This project is maintained by the software development team at the
 [*International Brain Lab*](https://internationalbrainlab.org/).
