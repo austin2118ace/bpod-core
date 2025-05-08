@@ -345,7 +345,7 @@ class Bpod:
                     candidate_ports.remove(port)
                     logger.debug(f'Detected secondary USB-serial port: {port}')
                     break
-            if self.serial2 is None:
+            if self.serial1 is None:
                 raise BpodError('Could not detect secondary serial port')
 
         # State Machine 2+ uses a third USB-serial port for FlexIO
