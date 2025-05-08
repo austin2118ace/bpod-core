@@ -446,26 +446,27 @@ class Bpod:
         return self.serial0.verify(b'_')
 
     def update_modules(self):
-        self.serial0.write(b'M')
-        modules = []
-        for idx in range(self._hardware.n_modules):
-            is_connected = self.serial0.read_struct('<?')[0]
-            if not is_connected:
-                module_name = f'{CHANNEL_TYPES[b"U"]}{idx + 1}'
-            else:
-                firmware_version, n = self.serial0.read_struct('<IB')
-                module_name, more_info = self.serial0.read_struct(f'<{n}s?')
-                while more_info:
-                    match self.serial0.read(1):
-                        case b'#':
-                            n_serial_events = self.serial0.read_struct('<B')[0]
-                        case b'E':
-                            n_event_names = self.serial0.read(0)
-                            event_names = []
-                            for i_event_name in range(n_event_names):
-                                n = self.serial0.read_struct('<B')[0]
-                                event_names.append(self.serial0.read_struct(f'<{n}s'))
-                    more_info = self.serial0.read_struct('<?')[0]
+        pass
+        # self.serial0.write(b'M')
+        # modules = []
+        # for idx in range(self._hardware.n_modules):
+        #     is_connected = self.serial0.read_struct('<?')[0]
+        #     if not is_connected:
+        #         module_name = f'{CHANNEL_TYPES[b"U"]}{idx + 1}'
+        #     else:
+        #         firmware_version, n = self.serial0.read_struct('<IB')
+        #         module_name, more_info = self.serial0.read_struct(f'<{n}s?')
+        #         while more_info:
+        #             match self.serial0.read(1):
+        #                 case b'#':
+        #                     n_serial_events = self.serial0.read_struct('<B')[0]
+        #                 case b'E':
+        #                     n_evt_names = self.serial0.read(0)
+        #                     evt_names = []
+        #                     for i_event_name in range(n_evt_names):
+        #                         n = self.serial0.read_struct('<B')[0]
+        #                         evt_names.append(self.serial0.read_struct(f'<{n}s'))
+        #             more_info = self.serial0.read_struct('<?')[0]
 
 
 class Channel(ABC):
@@ -618,20 +619,20 @@ class Output(Channel):
         self._serial0.write_struct('<c2B', b'O', self.index, state)
 
 
-class Module:
-    """Base class for Bpod modules."""
-
-    def __init__(
-        self,
-        bpod: Bpod,
-        index: int,
-        name: str,
-        n_events: int,
-        event_names: list[str] | None = None,
-        firmware_version: int | None = None,
-        connected: bool = False,
-    ):
-        self._bpod = bpod
-        self._index = index
-        self._name = name
-        self._n_events = n_events
+# class Module:
+#     """Base class for Bpod modules."""
+#
+#     def __init__(
+#         self,
+#         bpod: Bpod,
+#         index: int,
+#         name: str,
+#         n_events: int,
+#         event_names: list[str] | None = None,
+#         firmware_version: int | None = None,
+#         connected: bool = False,
+#     ):
+#         self._bpod = bpod
+#         self._index = index
+#         self._name = name
+#         self._n_events = n_events
