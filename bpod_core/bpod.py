@@ -555,6 +555,10 @@ class Input(Channel):
         bool
             True if the operation was success, False otherwise.
         """
+        if self.io_type not in b'FDBWVP':
+            logger.warning(
+                f'{"En" if enabled else "Dis"}abling input `{self.name}` has no effect'
+            )
         self._enabled = enabled
         success = self._set_enable_inputs()
         return success
