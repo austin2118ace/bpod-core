@@ -56,6 +56,48 @@ class TestEnhancedSerial:
         assert result is False
 
 
+class TestChunkedSerialReader:
+    def test_initial_buffer_size(self):
+        reader = com.ChunkedSerialReader()
+        assert len(reader) == 0
+
+    def test_put_data(self):
+        reader = com.ChunkedSerialReader()
+        reader.put(b'\x01\x02\x03\x04')
+        assert len(reader) == 4
+
+    def test_get_data(self):
+        reader = com.ChunkedSerialReader()
+        reader.put(b'\x01\x02\x03\x04')
+        data = reader.get(4)
+        assert data == bytearray(b'\x01\x02\x03\x04')
+        assert len(reader) == 0
+
+    def test_get_partial_data(self):
+        reader = com.ChunkedSerialReader()
+        reader.put(b'\x01\x02\x03\x04')
+        data = reader.get(2)
+        assert data == bytearray(b'\x01\x02')
+        assert len(reader) == 2
+
+    def test_data_received(self, capsys):
+        reader = com.ChunkedSerialReader()
+        reader.data_received(b'\x01\x00\x00\x00\x02\x00\x00\x00')
+        captured = capsys.readouterr()
+        assert '1' in captured.out
+        assert '2' in captured.out
+        assert len(reader) == 0
+
+    def test_multiple_data_received(self, capsys):
+        reader = com.ChunkedSerialReader()
+        reader.data_received(b'\x01\x00\x00\x00')
+        reader.data_received(b'\x02\x00\x00\x00')
+        captured = capsys.readouterr()
+        assert '1' in captured.out
+        assert '2' in captured.out
+        assert len(reader) == 0
+
+
 class TestToBytes:
     def test_to_bytes_with_bytes(self):
         assert com.to_bytes(b'test') == b'test'
