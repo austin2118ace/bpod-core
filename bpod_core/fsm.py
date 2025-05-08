@@ -240,3 +240,21 @@ class StateMachine(BaseModel):
                 digraph.edge(state_name, target_state, label=condition)
 
         return digraph
+
+    def validate_target_states(self):
+        """
+        Validates the target states in state_change_conditions.
+
+        Raises
+        ------
+        ValueError
+            If any target state in state_change_conditions does not exist in the
+            defined states or is not 'exit'.
+        """
+        valid_targets = list(self.states.keys()) + ['exit']
+        for state_name, state in self.states.items():
+            for target in state.state_change_conditions.values():
+                if target not in valid_targets:
+                    raise ValueError(
+                        f'Invalid target `{target}` in state `{state_name}`'
+                    )
