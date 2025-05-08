@@ -53,7 +53,9 @@ typehints_use_signature_return = False
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3.10/', None),
     'numpy': ('http://docs.scipy.org/doc/numpy/', None),
+    'pandas': ('https://pandas.pydata.org/docs/', None),
     'serial': ('https://pyserial.readthedocs.io/en/stable/', None),
+    'graphviz': ('https://graphviz.readthedocs.io/en/stable/', None),
 }
 
 # -- Options for HTML output -------------------------------------------------
