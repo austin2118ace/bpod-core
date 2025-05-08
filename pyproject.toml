@@ -13,7 +13,7 @@ classifiers = [
   "Topic :: Scientific/Engineering",
   "Typing :: Typed",
 ]
-dependencies = ["numpy", "pandas", "pydantic>=2.11", "pyserial>=3.5", "annotated-types>=0.7.0", "graphviz>=0.20.3"]
+dependencies = ["numpy", "pandas", "pydantic>=2.11", "pyserial>=3.5", "graphviz>=0.20.3"]
 description = "Python package for interfacing with the Bpod finite state machine"
 dynamic = ["version"]
 license = { text = "MIT" }
@@ -35,6 +35,8 @@ test = [
     "pytest-cov>=6.1.1",
     "pytest>=8.3.5",
     "ruff>=0.11.5",
+    "tox>=4.25.0",
+    "tox-pdm>=0.7.2",
 ]
 typing = ["mypy>=1.15.0", "types-pyserial>=3.5.0.20250326"]
 
@@ -111,3 +113,21 @@ addopts = "-q -ra --cov-report xml --cov-report html --cov=bpod_core"
 console_output_style = "count"
 minversion = "6.0"
 testpaths = ["tests/"]
+
+[tool.tox]
+env_list = ["typing", "clean", "py310", "py311", "py312", "py313", "py314"]
+
+[tool.tox.env_run_base]
+description = "Run test under {base_python}"
+groups = ["test"]
+commands = [["pytest", "--cov", "--cov-append"]]
+
+[tool.tox.env.clean]
+description = "erase coverage"
+skip_install = true
+commands = [["coverage", "erase"]]
+
+[tool.tox.env.typing]
+description = "run type check on code base"
+groups = ["typing"]
+commands = [["mypy", "-p", "bpod_core"]]

@@ -34,7 +34,8 @@ def mock_ext_serial():
     with (
         patch(f'{patched_obj_base}.__init__', return_value=None),
         patch(f'{patched_obj_base}.__enter__', return_value=extended_serial),
-        patch(f'{patched_obj_base}.__exit__', return_value=None),
+        patch(f'{patched_obj_base}.open'),
+        patch(f'{patched_obj_base}.close'),
         patch(f'{patched_obj_base}.write', side_effect=write),
         patch(f'{patched_obj_base}.read', side_effect=read),
         patch(f'{patched_obj_base}.reset_input_buffer'),
