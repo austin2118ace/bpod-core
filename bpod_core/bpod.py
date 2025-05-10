@@ -698,17 +698,32 @@ class Module:
     """Represents a Bpod module with its configuration and event names."""
 
     _bpod: Bpod
+    """A reference to the Bpod."""
+
     index: int
+    """The index of the module."""
+
     name: str
+    """The name of the module."""
+
     is_connected: bool = False
+    """Whether the module is connected."""
+
     firmware_version: int | None = None
+    """The firmware version of the module."""
+
     n_events: int = N_SERIAL_EVENTS_DEFAULT
+    """The number of events assigned to the module."""
+
     _custom_event_names: list[str] = field(default_factory=list)
+    """A list of custom event names."""
 
     def __post_init__(self):
         self._relay_enabled = False
+        self._define_event_names()
 
-        # define the module's event names
+    def _define_event_names(self):
+        """Define the module's event names."""
         self.event_names = []
         for idx in range(self.n_events):
             if len(self._custom_event_names) > idx:
@@ -717,7 +732,7 @@ class Module:
                 self.event_names.append(f'{self.name}_{idx + 1}')
 
     @validate_call
-    def set_relay(self, enable: bool):
+    def set_relay(self, enable: bool) -> None:
         """
         Enable or disable the relay for the module.
 
@@ -735,25 +750,11 @@ class Module:
         self._relay_enabled = enable
 
     @property
-    def relay(self):
-        """
-        Get the current state of the relay.
-
-        Returns
-        -------
-        bool
-            True if the relay is enabled, False otherwise.
-        """
+    def relay(self) -> bool:
+        """The current state of the relay."""
         return self._relay_enabled
 
     @relay.setter
     def relay(self, state: bool) -> None:
-        """
-        Set the state of the relay.
-
-        Parameters
-        ----------
-        state : bool
-            True to enable the relay, False to disable it.
-        """
+        """The current state of the relay."""
         self.set_relay(state)
