@@ -4,7 +4,7 @@ import logging
 import re
 import struct
 from abc import ABC, abstractmethod
-from dataclasses import InitVar, dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, NamedTuple
 
 from pydantic import validate_call
@@ -108,9 +108,9 @@ class Bpod:
     """Secondary serial device for communication with the Bpod."""
     serial2: ExtendedSerial | None = None
     """Tertiary serial device for communication with the Bpod - used by Bpod 2+ only."""
-    inputs: NamedTuple
-    outputs: NamedTuple
-    modules: NamedTuple
+    inputs: NamedTuple = NamedTuple('inputs', ())
+    outputs: NamedTuple = NamedTuple('outputs', ())
+    modules: NamedTuple = NamedTuple('modules', ())
 
     @validate_call
     def __init__(self, port: str | None = None, serial_number: str | None = None):
@@ -462,46 +462,55 @@ class Bpod:
         return self.serial0.verify(b'')
 
     def update_modules(self):
+        """Update the list of connected modules and their configurations."""
+        # self._disable_all_module_relays()
         self.serial0.write(b'M')
         modules = []
         for idx in range(self._hardware.n_modules):
-            is_connected = self.serial0.read_struct('<?')[0]
-            n_events = N_SERIAL_EVENTS_DEFAULT
-            firmware_version = None
-            custom_event_names = list()
-            if not is_connected:
+            # check connection state
+            if not (is_connected := self.serial0.read_struct('<?')[0]):
                 module_name = f'{CHANNEL_TYPES_INPUT[b"U"]}{idx + 1}'
-            else:
-                firmware_version, n = self.serial0.read_struct('<IB')
-                type, more_info = self.serial0.read_struct(f'<{n}s?')
+                modules.append(Module(_bpod=self, index=idx, name=module_name))
+                continue
 
-                type = type.decode('UTF8')
-                matches = [re.match(rf'^{type}(\d$)', m.name) for m in modules]
-                index = max([int(m.group(1)) for m in matches if m is not None] + [0])
-                module_name = f'{type}{index + 1}'
+            # read further information if module is connected
+            n_events = N_SERIAL_EVENTS_DEFAULT
+            firmware_version, n_chars = self.serial0.read_struct('<IB')
+            base_name, more_info = self.serial0.read_struct(f'<{n_chars}s?')
+            base_name = base_name.decode('UTF8')
+            custom_event_names = list()
+            while more_info:
+                match self.serial0.read(1):
+                    case b'#':
+                        n_events = self.serial0.read_struct('<B')[0]
+                    case b'E':
+                        n_event_names = self.serial0.read_struct('<B')[0]
+                        for _ in range(n_event_names):
+                            n_chars = self.serial0.read_struct('<B')[0]
+                            event_name = self.serial0.read_struct(f'<{n_chars}s')[0]
+                            custom_event_names.append(event_name.decode('UTF8'))
+                more_info = self.serial0.read_struct('<?')[0]
 
-                while more_info:
-                    match self.serial0.read(1):
-                        case b'#':
-                            n_events = self.serial0.read_struct('<B')[0]
-                        case b'E':
-                            n_event_names = self.serial0.read_struct('<B')[0]
-                            for _ in range(n_event_names):
-                                n = self.serial0.read_struct('<B')[0]
-                                event_name = self.serial0.read_struct(f'<{n}s')[0]
-                                custom_event_names.append(event_name.decode('UTF8'))
-                    more_info = self.serial0.read_struct('<?')[0]
+            # create module name with trailing index
+            matches = [re.match(rf'^{base_name}(\d$)', m.name) for m in modules]
+            index = max([int(m.group(1)) for m in matches if m is not None] + [0])
+            module_name = f'{base_name}{index + 1}'
+            logger.debug(f'Detected {module_name} on module port {idx + 1}')
+
+            # create instance of Module
             modules.append(
                 Module(
+                    _bpod=self,
                     index=idx,
                     name=module_name,
                     is_connected=is_connected,
-                    n_events=n_events,
                     firmware_version=firmware_version,
-                    custom_event_names=custom_event_names,
-                    _bpod=self,
+                    n_events=n_events,
+                    _custom_event_names=custom_event_names,
                 )
             )
+
+        # create NamedTuple and store as class attribute
         self.modules = NamedTuple('modules', [(m.name, Module) for m in modules])._make(
             modules
         )
@@ -688,22 +697,22 @@ class Output(Channel):
 class Module:
     """Represents a Bpod module with its configuration and event names."""
 
+    _bpod: Bpod
     index: int
     name: str
-    is_connected: bool
-    n_events: int
-    firmware_version: int | None
-    custom_event_names: InitVar[list[str]]
-    _bpod: Bpod
+    is_connected: bool = False
+    firmware_version: int | None = None
+    n_events: int = N_SERIAL_EVENTS_DEFAULT
+    _custom_event_names: list[str] = field(default_factory=list)
 
-    def __post_init__(self, custom_event_names):
+    def __post_init__(self):
         self._relay_enabled = False
 
         # define the module's event names
         self.event_names = []
         for idx in range(self.n_events):
-            if len(custom_event_names) > idx:
-                self.event_names.append(f'{self.name}_{custom_event_names[idx]}')
+            if len(self._custom_event_names) > idx:
+                self.event_names.append(f'{self.name}_{self._custom_event_names[idx]}')
             else:
                 self.event_names.append(f'{self.name}_{idx + 1}')
 
