@@ -1,8 +1,10 @@
 """Module for interfacing with the Bpod Finite State Machine."""
 
 import logging
+import re
 import struct
 from abc import ABC, abstractmethod
+from dataclasses import InitVar, dataclass
 from typing import TYPE_CHECKING, NamedTuple
 
 from pydantic import validate_call
@@ -11,6 +13,7 @@ from serial.tools.list_ports import comports
 
 from bpod_core import __version__ as bpod_core_version
 from bpod_core.com import ExtendedSerial
+from bpod_core.fsm import StateMachine
 
 if TYPE_CHECKING:
     from _typeshed import ReadableBuffer  # noqa: F401
@@ -25,7 +28,6 @@ CHANNEL_TYPES_INPUT = {
     b'X': 'SoftCode',
     b'Z': 'SoftCodeApp',
     b'F': 'FlexIO',
-    b'S': 'SPI',
     b'D': 'Digital',
     b'B': 'BNC',
     b'W': 'Wire',
@@ -33,6 +35,7 @@ CHANNEL_TYPES_INPUT = {
 }
 CHANNEL_TYPES_OUTPUT = CHANNEL_TYPES_INPUT.copy()
 CHANNEL_TYPES_OUTPUT.update({b'V': 'Valve', b'P': 'PWM'})
+N_SERIAL_EVENTS_DEFAULT = 15
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +110,7 @@ class Bpod:
     """Tertiary serial device for communication with the Bpod - used by Bpod 2+ only."""
     inputs: NamedTuple
     outputs: NamedTuple
+    modules: NamedTuple
 
     @validate_call
     def __init__(self, port: str | None = None, serial_number: str | None = None):
@@ -131,6 +135,9 @@ class Bpod:
 
         # detect additional serial ports
         self._detect_additional_serial_ports()
+
+        # update modules
+        self.update_modules()
 
         # log hardware information
         machine = {3: 'r2.0-2.5', 4: '2+ r1.0'}.get(self.version.machine, 'unknown')
@@ -401,6 +408,10 @@ class Bpod:
         logger.debug('Resetting session clock')
         return self.serial0.verify(b'*')
 
+    def _disable_all_module_relays(self):
+        for module in self.modules:
+            module.set_relay(False)
+
     @property
     def port(self) -> str | None:
         """The port of the Bpod's primary serial device."""
@@ -451,27 +462,72 @@ class Bpod:
         return self.serial0.verify(b'')
 
     def update_modules(self):
+        self.serial0.write(b'M')
+        modules = []
+        for idx in range(self._hardware.n_modules):
+            is_connected = self.serial0.read_struct('<?')[0]
+            n_events = N_SERIAL_EVENTS_DEFAULT
+            firmware_version = None
+            custom_event_names = list()
+            if not is_connected:
+                module_name = f'{CHANNEL_TYPES_INPUT[b"U"]}{idx + 1}'
+            else:
+                firmware_version, n = self.serial0.read_struct('<IB')
+                type, more_info = self.serial0.read_struct(f'<{n}s?')
+
+                type = type.decode('UTF8')
+                matches = [re.match(rf'^{type}(\d$)', m.name) for m in modules]
+                index = max([int(m.group(1)) for m in matches if m is not None] + [0])
+                module_name = f'{type}{index + 1}'
+
+                while more_info:
+                    match self.serial0.read(1):
+                        case b'#':
+                            n_events = self.serial0.read_struct('<B')[0]
+                        case b'E':
+                            n_event_names = self.serial0.read_struct('<B')[0]
+                            for _ in range(n_event_names):
+                                n = self.serial0.read_struct('<B')[0]
+                                event_name = self.serial0.read_struct(f'<{n}s')[0]
+                                custom_event_names.append(event_name.decode('UTF8'))
+                    more_info = self.serial0.read_struct('<?')[0]
+            modules.append(
+                Module(
+                    index=idx,
+                    name=module_name,
+                    is_connected=is_connected,
+                    n_events=n_events,
+                    firmware_version=firmware_version,
+                    custom_event_names=custom_event_names,
+                    _bpod=self,
+                )
+            )
+        self.modules = NamedTuple('modules', [(m.name, Module) for m in modules])._make(
+            modules
+        )
+
+    def send_state_machine(self, state_machine: StateMachine):
         pass
-        # self.serial0.write(b'M')
-        # modules = []
-        # for idx in range(self._hardware.n_modules):
-        #     is_connected = self.serial0.read_struct('<?')[0]
-        #     if not is_connected:
-        #         module_name = f'{CHANNEL_TYPES[b"U"]}{idx + 1}'
-        #     else:
-        #         firmware_version, n = self.serial0.read_struct('<IB')
-        #         module_name, more_info = self.serial0.read_struct(f'<{n}s?')
-        #         while more_info:
-        #             match self.serial0.read(1):
-        #                 case b'#':
-        #                     n_serial_events = self.serial0.read_struct('<B')[0]
-        #                 case b'E':
-        #                     n_evt_names = self.serial0.read(0)
-        #                     evt_names = []
-        #                     for i_event_name in range(n_evt_names):
-        #                         n = self.serial0.read_struct('<B')[0]
-        #                         evt_names.append(self.serial0.read_struct(f'<{n}s'))
-        #             more_info = self.serial0.read_struct('<?')[0]
+        # self._hardware.input_description
+
+        # the number of serial events PLACEHOLDER
+        # n_serial_events = 15 * self._hardware.input_description.count(b'U')
+
+        # number of softcodes PLACEHOLDER (see above)
+        # n_softcodes = self._hardware.max_serial_events - n_serial_events
+
+        # the number of digital input channels (i.e., BNC, Wire and Port)
+        # n_digital = sum([self._hardware.input_description.count(x) for x in b'BWP'])
+
+        # number of events:
+        # n_serial_events + n_softcodes + n_digital_inputs * 2 + 16
+
+        # for key in self._hardware.input_description:
+        #     match key:
+        #         case b'U':
+
+        # self.serial0.write_struct(f'<c??H{n_bytes}B', b'C', run_asap, use_255_back,
+        # n_bytes, bytestring)
 
 
 class Channel(ABC):
@@ -628,20 +684,67 @@ class Output(Channel):
         self._serial0.write_struct('<c2B', b'O', self.index, state)
 
 
-# class Module:
-#     """Base class for Bpod modules."""
-#
-#     def __init__(
-#         self,
-#         bpod: Bpod,
-#         index: int,
-#         name: str,
-#         n_events: int,
-#         event_names: list[str] | None = None,
-#         firmware_version: int | None = None,
-#         connected: bool = False,
-#     ):
-#         self._bpod = bpod
-#         self._index = index
-#         self._name = name
-#         self._n_events = n_events
+@dataclass
+class Module:
+    """Represents a Bpod module with its configuration and event names."""
+
+    index: int
+    name: str
+    is_connected: bool
+    n_events: int
+    firmware_version: int | None
+    custom_event_names: InitVar[list[str]]
+    _bpod: Bpod
+
+    def __post_init__(self, custom_event_names):
+        self._relay_enabled = False
+
+        # define the module's event names
+        self.event_names = []
+        for idx in range(self.n_events):
+            if len(custom_event_names) > idx:
+                self.event_names.append(f'{self.name}_{custom_event_names[idx]}')
+            else:
+                self.event_names.append(f'{self.name}_{idx + 1}')
+
+    @validate_call
+    def set_relay(self, enable: bool):
+        """
+        Enable or disable the relay for the module.
+
+        Parameters
+        ----------
+        enable : bool
+            True to enable the relay, False to disable it.
+        """
+        if enable == self._relay_enabled:
+            return
+        if enable is True:
+            self._bpod._disable_all_module_relays()
+        logger.info(f'{"En" if enable else "Dis"}abling relay for module {self.name}')
+        self._bpod.serial0.write_struct('<cB?', b'J', self.index, enable)
+        self._relay_enabled = enable
+
+    @property
+    def relay(self):
+        """
+        Get the current state of the relay.
+
+        Returns
+        -------
+        bool
+            True if the relay is enabled, False otherwise.
+        """
+        return self._relay_enabled
+
+    @relay.setter
+    def relay(self, state: bool) -> None:
+        """
+        Set the state of the relay.
+
+        Parameters
+        ----------
+        state : bool
+            True to enable the relay, False to disable it.
+        """
+        self.set_relay(state)
