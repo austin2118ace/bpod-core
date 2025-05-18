@@ -110,11 +110,11 @@ class Bpod:
     """Secondary serial device for communication with the Bpod."""
     serial2: ExtendedSerial | None = None
     """Tertiary serial device for communication with the Bpod - used by Bpod 2+ only."""
-    inputs: NamedTuple = NamedTuple('inputs', ())
+    inputs: NamedTuple
     """Available input channels."""
-    outputs: NamedTuple = NamedTuple('outputs', ())
+    outputs: NamedTuple
     """Available output channels."""
-    modules: NamedTuple = NamedTuple('modules', ())
+    modules: NamedTuple
     """Available modules."""
     event_names: list[str]
     """List of event names."""
@@ -696,16 +696,16 @@ class Bpod:
         # Validate states
         valid_targets = list(state_machine.states.keys()) + VALID_OPERATORS
         for state_name, state in state_machine.states.items():
-            for condition, target in state.state_change_conditions.items():
+            for condition_name, target in state.state_change_conditions.items():
                 if target not in valid_targets:
                     target_type = 'operator' if target[0] == '>' else 'target state'
                     raise ValueError(
                         f"Invalid {target_type} '{target}' for state change condition "
-                        f"'{condition}' in state '{state_name}'"
+                        f"'{condition_name}' in state '{state_name}'"
                     )
-                if condition not in self.event_names:
+                if condition_name not in self.event_names:
                     raise ValueError(
-                        f"Invalid state change condition '{condition}' in state "
+                        f"Invalid state change condition '{condition_name}' in state "
                         f"'{state_name}'"
                     )
             actions = set(state.output_actions.keys())
