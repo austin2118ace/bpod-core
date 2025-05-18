@@ -4,7 +4,6 @@ import logging
 import re
 import struct
 from abc import ABC, abstractmethod
-from collections.abc import Generator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -861,10 +860,8 @@ class Bpod:
         )
 
         # Helper function for packing a collection of integers into byte_array
-        def pack_values(
-            generator: Generator[int, None, None], format_str: str, n: int
-        ) -> None:
-            byte_array.extend(struct.pack(f'<{n}{format_str}', *generator))
+        def pack_values(values: list[int], format_str: str) -> None:
+            byte_array.extend(struct.pack(f'<{len(values)}{format_str}', *values))
 
         # The format of the next values depends on the number of global timers
         if self._hardware.n_global_timers > 16:
@@ -877,53 +874,48 @@ class Bpod:
         # Pack global timer triggers and cancels into bytearray
         for key in ('GlobalTimerTrig', 'GlobalTimerCancel'):
             pack_values(
-                (s.output_actions.get(key, 0) for s in state_machine.states.values()),
+                [s.output_actions.get(key, 0) for s in state_machine.states.values()],
                 format_string,
-                n_states,
             )
 
         # Pack global timer onset triggers into bytearray
         pack_values(
-            (
+            [
                 getattr(state_machine.global_timers.get(idx, {}), 'onset_trigger', 0)
                 for idx in range(n_global_timers)
-            ),
+            ],
             format_string,
-            n_global_timers,
         )
 
         # Pack state timers
         pack_values(
-            (
+            [
                 round(s.timer * self._hardware.cycle_frequency)
                 for s in state_machine.states.values()
-            ),
-            'I',
-            n_states,
+            ],
+            'I',  # uint32
         )
 
         # Pack global timer durations, onset delays and loop intervals
         for key in ('duration', 'onset_delay', 'loop_interval'):
             pack_values(
-                (
+                [
                     round(
                         getattr(state_machine.global_timers.get(idx, {}), key, 0)
                         * self._hardware.cycle_frequency
                     )
                     for idx in range(n_global_timers)
-                ),
-                'I',
-                n_global_timers,
+                ],
+                'I',  # uint32
             )
 
         # Pack global counter thresholds
         pack_values(
-            (
+            [
                 getattr(state_machine.global_counters.get(idx, {}), 'threshold', 0)
                 for idx in range(n_global_counters)
-            ),
-            'I',
-            n_global_counters,
+            ],
+            'I',  # uint32
         )
 
         # Send to state machine
