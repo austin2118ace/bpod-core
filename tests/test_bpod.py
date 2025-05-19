@@ -4,6 +4,7 @@ import struct
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
+from fsm import StateMachine
 from serial import SerialException
 
 from bpod_core.bpod import Bpod, BpodError
@@ -13,6 +14,7 @@ fixture_bpod_all = {
     b'6': b'5',
     b'f': b'\x00\x00',
     b'v': b'\x01',
+    b'C[\\x00\\x01]{2}.*': b'',
 }
 
 fixture_bpod_25 = {
@@ -50,11 +52,13 @@ def mock_ext_serial():
     extended_serial = ExtendedSerial()
     extended_serial.response_buffer = bytearray()
     extended_serial.mock_responses = dict()
+    extended_serial.last_write = b''
 
     def write(data):
         for pattern, value in extended_serial.mock_responses.items():
             if re.match(pattern, data):
                 extended_serial.response_buffer.extend(value)
+                extended_serial.last_write = data
                 return
         raise AssertionError(f"No matching response for input '{data}'")
 
@@ -335,9 +339,15 @@ class TestResetSessionClock:
 
 
 class TestSendStateMachine:
-    def test_send_state_machine(self, mock_bpod_25):
-        """Test retrieval of version info with supported firmware and hardware."""
+    def test_send_state_machine_1(self, mock_bpod_25):
+        """Test sending of state machine, variant 1."""
         bpod = mock_bpod_25('COM3')
-        assert bpod._version.firmware == (23, 0)
-        assert bpod._version.machine == 3
-        assert bpod._version.pcb == 1
+        fsm = StateMachine()
+        fsm.add_state('a', 1, {'Tup': 'b'}, {'BNC1': 1})
+        fsm.add_state('b', 1, {'Tup': 'a'}, {'BNC2': 1})
+        bpod.send_state_machine(fsm)
+        assert (
+            bpod.serial0.last_write == b'C\x01\x00(\x00\x02\x00\x00\x00\x01\x00\x00\x00'
+            b'\x01\x07\x01\x01\x08\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+            b"\x00\x00\x00\x00\x00\x00\x10'\x00\x00\x10'\x00\x00"
+        )
