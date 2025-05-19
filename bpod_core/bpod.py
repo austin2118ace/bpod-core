@@ -5,7 +5,7 @@ import re
 import struct
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, NamedTuple
+from typing import NamedTuple
 
 from pydantic import validate_call
 from serial import SerialException
@@ -14,9 +14,6 @@ from serial.tools.list_ports import comports
 from bpod_core import __version__ as bpod_core_version
 from bpod_core.com import ExtendedSerial
 from bpod_core.fsm import StateMachine
-
-if TYPE_CHECKING:
-    from _typeshed import ReadableBuffer  # noqa: F401
 
 PROJECT_NAME = 'bpod-core'
 VENDOR_IDS_BPOD = [0x16C0]  # vendor IDs of supported Bpod devices
