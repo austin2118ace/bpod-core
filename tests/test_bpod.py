@@ -4,11 +4,11 @@ import struct
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
-from fsm import StateMachine
 from serial import SerialException
 
 from bpod_core.bpod import Bpod, BpodError
 from bpod_core.com import ExtendedSerial
+from bpod_core.fsm import StateMachine
 
 fixture_bpod_all = {
     b'6': b'5',
