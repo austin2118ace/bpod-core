@@ -1,4 +1,5 @@
 import logging
+import re
 import struct
 from unittest.mock import MagicMock, PropertyMock, patch
 
@@ -7,6 +8,40 @@ from serial import SerialException
 
 from bpod_core.bpod import Bpod, BpodError
 from bpod_core.com import ExtendedSerial
+
+fixture_bpod_all = {
+    b'6': b'5',
+    b'f': b'\x00\x00',
+    b'v': b'\x01',
+}
+
+fixture_bpod_25 = {
+    **fixture_bpod_all,
+    b'F': b'\x17\x00\x03\x00',
+    b'H': b'\x00\x01d\x00i\x05\x10\x08\x10\rUUUUUXZBBPPPP\x11UUUUUXZBBPPPPVVVV',
+    b'M': b'\x00\x00\x00\x00\x00',
+    b'E[\\x00\\x01]{13}': b'\x01',
+}
+
+fixture_bpod_2p = {
+    **fixture_bpod_all,
+    b'F': b'\x17\x00\x04\x00',
+    b'H': b'\x00\x01d\x00K\x10\x08\x10\x10UUUXZFFFFBBPPPPP\x15UUUXZFFFFBBPPPPPVVVVV',
+    b'M': b'\x00\x00\x00',
+    b'E[\\x00\\x01]{16}': b'\x01',
+}
+
+
+@pytest.fixture
+def mock_comports():
+    """Fixture to mock available COM ports."""
+    mock_port_info = MagicMock()
+    mock_port_info.device = 'COM3'
+    mock_port_info.serial_number = '12345'
+    mock_port_info.vid = 0x16C0  # supported VID
+    with patch('bpod_core.bpod.comports') as mock_comports:
+        mock_comports.return_value = [mock_port_info]
+        yield mock_comports
 
 
 @pytest.fixture
@@ -17,10 +52,11 @@ def mock_ext_serial():
     extended_serial.mock_responses = dict()
 
     def write(data):
-        assert data in extended_serial.mock_responses
-        extended_serial.response_buffer.extend(
-            extended_serial.mock_responses.get(data, b'')
-        )
+        for pattern, value in extended_serial.mock_responses.items():
+            if re.match(pattern, data):
+                extended_serial.response_buffer.extend(value)
+                return
+        raise AssertionError(f"No matching response for input '{data}'")
 
     def read(size: int = 1) -> bytes:
         response = bytes(extended_serial.response_buffer[:size])
@@ -61,18 +97,27 @@ def mock_bpod(mock_ext_serial):
     yield mock_bpod
 
 
-class TestBpodIdentifyBpod:
-    @pytest.fixture
-    def mock_comports(self):
-        """Fixture to mock available COM ports."""
-        mock_port_info = MagicMock()
-        mock_port_info.device = 'COM3'
-        mock_port_info.serial_number = '12345'
-        mock_port_info.vid = 0x16C0  # supported VID
-        with patch('bpod_core.bpod.comports') as mock_comports:
-            mock_comports.return_value = [mock_port_info]
-            yield mock_comports
+@pytest.fixture
+def mock_bpod_25(mock_comports, mock_ext_serial):
+    mock_ext_serial.mock_responses.update(fixture_bpod_25)
+    with (
+        patch('bpod_core.bpod.ExtendedSerial', return_value=mock_ext_serial),
+        patch('bpod_core.bpod.Bpod._detect_additional_serial_ports'),
+    ):
+        yield Bpod
 
+
+@pytest.fixture
+def mock_bpod_2p(mock_comports, mock_ext_serial):
+    mock_ext_serial.mock_responses.update(fixture_bpod_2p)
+    with (
+        patch('bpod_core.bpod.ExtendedSerial', return_value=mock_ext_serial),
+        patch('bpod_core.bpod.Bpod._detect_additional_serial_ports'),
+    ):
+        yield Bpod
+
+
+class TestBpodIdentifyBpod:
     @pytest.fixture
     def mock_bpod(self, mock_bpod):
         mock_bpod.serial0.response_buffer = bytearray([222])
@@ -282,8 +327,17 @@ class TestBpodHandshake:
 class TestResetSessionClock:
     def test_reset_session_clock(self, mock_bpod, caplog):
         caplog.set_level(logging.DEBUG)
-        mock_bpod.serial0.mock_responses = {b'*': b'\x01'}
+        mock_bpod.serial0.mock_responses = {rb'\*': b'\x01'}
         assert Bpod._reset_session_clock(mock_bpod) is True
         assert len(caplog.records) == 1
         assert caplog.records[0].levelname == 'DEBUG'
         assert 'Resetting' in caplog.records[0].message
+
+
+class TestSendStateMachine:
+    def test_send_state_machine(self, mock_bpod_25):
+        """Test retrieval of version info with supported firmware and hardware."""
+        bpod = mock_bpod_25('COM3')
+        assert bpod._version.firmware == (23, 0)
+        assert bpod._version.machine == 3
+        assert bpod._version.pcb == 1
