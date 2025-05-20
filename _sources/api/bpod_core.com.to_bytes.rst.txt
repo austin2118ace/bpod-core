@@ -1,0 +1,6 @@
+bpod\_core.com.to\_bytes
+========================
+
+.. currentmodule:: bpod_core.com
+
+.. autofunction:: to_bytes

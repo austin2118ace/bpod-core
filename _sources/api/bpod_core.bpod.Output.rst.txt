@@ -1,0 +1,8 @@
+bpod\_core.bpod.Output
+======================
+
+.. currentmodule:: bpod_core.bpod
+
+.. autoclass:: Output
+   :members:
+   :undoc-members:

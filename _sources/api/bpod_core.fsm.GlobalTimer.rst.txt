@@ -1,0 +1,8 @@
+bpod\_core.fsm.GlobalTimer
+==========================
+
+.. currentmodule:: bpod_core.fsm
+
+.. autoclass:: GlobalTimer
+   :members:
+   :undoc-members:

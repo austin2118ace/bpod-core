@@ -1,0 +1,8 @@
+bpod\_core.bpod.VersionInfo
+===========================
+
+.. currentmodule:: bpod_core.bpod
+
+.. autoclass:: VersionInfo
+   :members:
+   :undoc-members:

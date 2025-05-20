@@ -1,0 +1,8 @@
+bpod\_core.fsm.Condition
+========================
+
+.. currentmodule:: bpod_core.fsm
+
+.. autoclass:: Condition
+   :members:
+   :undoc-members:

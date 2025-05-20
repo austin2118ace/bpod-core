@@ -1,0 +1,13 @@
+bpod\_core.misc
+===============
+
+.. automodule:: bpod_core.misc
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+      :nosignatures:
+      :toctree:
+   
+      convert_to_snake_case
+   

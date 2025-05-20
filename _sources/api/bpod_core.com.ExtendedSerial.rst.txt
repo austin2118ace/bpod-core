@@ -1,0 +1,8 @@
+bpod\_core.com.ExtendedSerial
+=============================
+
+.. currentmodule:: bpod_core.com
+
+.. autoclass:: ExtendedSerial
+   :members:
+   :undoc-members:

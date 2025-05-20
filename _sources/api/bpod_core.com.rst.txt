@@ -1,0 +1,23 @@
+bpod\_core.com
+==============
+
+.. automodule:: bpod_core.com
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+      :nosignatures:
+      :toctree:
+   
+      to_bytes
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+      :nosignatures:
+      :toctree:
+      :template: custom-class-template.rst
+   
+      ChunkedSerialReader
+      ExtendedSerial
+   

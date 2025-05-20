@@ -1,0 +1,8 @@
+bpod\_core.com.ChunkedSerialReader
+==================================
+
+.. currentmodule:: bpod_core.com
+
+.. autoclass:: ChunkedSerialReader
+   :members:
+   :undoc-members:

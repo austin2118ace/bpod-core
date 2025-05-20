@@ -1,0 +1,8 @@
+bpod\_core.fsm.GlobalCounter
+============================
+
+.. currentmodule:: bpod_core.fsm
+
+.. autoclass:: GlobalCounter
+   :members:
+   :undoc-members:

@@ -1,0 +1,18 @@
+bpod\_core.fsm
+==============
+
+.. automodule:: bpod_core.fsm
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+      :nosignatures:
+      :toctree:
+      :template: custom-class-template.rst
+   
+      Condition
+      GlobalCounter
+      GlobalTimer
+      State
+      StateMachine
+   

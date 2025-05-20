@@ -1,0 +1,6 @@
+bpod\_core.bpod.BpodError
+=========================
+
+.. currentmodule:: bpod_core.bpod
+
+.. autoexception:: BpodError

@@ -1,0 +1,8 @@
+bpod\_core.bpod.HardwareConfiguration
+=====================================
+
+.. currentmodule:: bpod_core.bpod
+
+.. autoclass:: HardwareConfiguration
+   :members:
+   :undoc-members:

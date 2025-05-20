@@ -1,0 +1,6 @@
+bpod\_core.misc.convert\_to\_snake\_case
+========================================
+
+.. currentmodule:: bpod_core.misc
+
+.. autofunction:: convert_to_snake_case

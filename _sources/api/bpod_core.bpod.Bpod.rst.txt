@@ -1,0 +1,8 @@
+bpod\_core.bpod.Bpod
+====================
+
+.. currentmodule:: bpod_core.bpod
+
+.. autoclass:: Bpod
+   :members:
+   :undoc-members:

@@ -1,0 +1,8 @@
+bpod\_core.bpod.Input
+=====================
+
+.. currentmodule:: bpod_core.bpod
+
+.. autoclass:: Input
+   :members:
+   :undoc-members:

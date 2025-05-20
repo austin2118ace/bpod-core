@@ -1,0 +1,8 @@
+bpod\_core.bpod.Channel
+=======================
+
+.. currentmodule:: bpod_core.bpod
+
+.. autoclass:: Channel
+   :members:
+   :undoc-members:
